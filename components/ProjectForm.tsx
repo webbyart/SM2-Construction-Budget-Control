@@ -1,8 +1,8 @@
 
 import React, { useState, useEffect } from 'react';
-import { Project, Network, NetworkDefinition, Worker } from '../types';
+import { Project, Network, NetworkDefinition } from '../types';
 import { StorageService } from '../services/storage';
-import { Save, Plus, Trash2, Loader2, Briefcase, User as UserIcon, Percent, Database, ChevronDown, AlertCircle, RefreshCw, PenTool, FileText, Calendar } from 'lucide-react';
+import { Save, Plus, Trash2, Loader2, Briefcase, Percent, Database, ChevronDown, AlertCircle, RefreshCw, PenTool, FileText, Calendar, Hash } from 'lucide-react';
 
 interface ProjectFormProps {
   project?: Project;
@@ -30,7 +30,20 @@ const ProjectForm: React.FC<ProjectFormProps> = ({ project, onSave }) => {
       setWorker(project.worker);
       setMaxBudgetPercent(project.maxBudgetPercent);
       setApprovalNumber(project.approvalNumber || '');
-      setApprovalDate(project.approvalDate || '');
+      
+      // Format date for <input type="date"> (YYYY-MM-DD)
+      if (project.approvalDate) {
+        try {
+          const date = new Date(project.approvalDate);
+          if (!isNaN(date.getTime())) {
+            setApprovalDate(date.toISOString().split('T')[0]);
+          } else {
+            setApprovalDate(project.approvalDate); // Fallback to raw string if possible
+          }
+        } catch (e) {
+          setApprovalDate('');
+        }
+      }
       setNetworks(project.networks || []);
     } else {
       addNetwork();
@@ -54,6 +67,7 @@ const ProjectForm: React.FC<ProjectFormProps> = ({ project, onSave }) => {
   const addNetwork = () => {
     const newNet: Network = {
       networkCode: '',
+      networkName: '',
       labor_full: 0, supervise_full: 0, transport_full: 0, misc_full: 0,
       labor_balance: 0, supervise_balance: 0, transport_balance: 0, misc_balance: 0
     };
@@ -69,9 +83,17 @@ const ProjectForm: React.FC<ProjectFormProps> = ({ project, onSave }) => {
     const updated = [...networks];
     const net = { ...updated[index] };
     
-    if (typeof value === 'number' || (typeof value === 'string' && field.endsWith('_full'))) {
+    if (field === 'networkCode') {
+      const code = value.toString().toUpperCase().trim();
+      net.networkCode = code;
+      // If code changed, check if it matches a master name
+      const matched = networkDefs.find(d => d.code === code);
+      if (matched) net.networkName = matched.name;
+    } else if (typeof value === 'number' || (typeof value === 'string' && field.endsWith('_full'))) {
       const num = parseFloat(value.toString()) || 0;
       (net as any)[field] = num;
+      
+      // For new projects, initialize balance to full budget
       if (!project && field.endsWith('_full')) {
         const balanceField = field.replace('_full', '_balance');
         (net as any)[balanceField] = num;
@@ -84,10 +106,21 @@ const ProjectForm: React.FC<ProjectFormProps> = ({ project, onSave }) => {
     setNetworks(updated);
   };
 
+  const onSelectNetworkFromDropdown = (index: number, code: string) => {
+    const updated = [...networks];
+    const def = networkDefs.find(d => d.code === code);
+    updated[index] = { 
+      ...updated[index], 
+      networkCode: code, 
+      networkName: def ? def.name : updated[index].networkName 
+    };
+    setNetworks(updated);
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!wbs || !name || !worker || networks.some(n => !n.networkCode)) {
-      alert('กรุณากรอกข้อมูลให้ครบถ้วนและระบุรหัสโครงข่ายทุกรายการ');
+    if (!wbs.trim() || !name.trim() || !worker.trim() || networks.some(n => !n.networkCode.trim())) {
+      alert('กรุณากรอกข้อมูลให้ครบถ้วนและระบุเลขที่โครงข่ายทุกรายการ');
       return;
     }
 
@@ -97,10 +130,18 @@ const ProjectForm: React.FC<ProjectFormProps> = ({ project, onSave }) => {
         wbs: wbs.trim().toUpperCase(), 
         name: name.trim(), 
         worker: worker.trim(), 
-        maxBudgetPercent,
+        maxBudgetPercent: Number(maxBudgetPercent),
         approvalNumber: approvalNumber.trim(),
-        approvalDate,
-        networks: networks.map(n => ({ ...n }))
+        approvalDate: approvalDate,
+        networks: networks.map(n => ({ 
+          ...n,
+          networkCode: n.networkCode.trim(),
+          networkName: n.networkName || '',
+          labor_balance: n.labor_balance !== undefined ? n.labor_balance : n.labor_full,
+          supervise_balance: n.supervise_balance !== undefined ? n.supervise_balance : n.supervise_full,
+          transport_balance: n.transport_balance !== undefined ? n.transport_balance : n.transport_full,
+          misc_balance: n.misc_balance !== undefined ? n.misc_balance : n.misc_full
+        }))
       };
       await StorageService.saveProject(payload);
       onSave();
@@ -123,7 +164,7 @@ const ProjectForm: React.FC<ProjectFormProps> = ({ project, onSave }) => {
           </div>
           <div className="flex items-center gap-4">
              <button 
-               type="button"
+               type="button" 
                onClick={loadMasterData}
                disabled={isRefreshing}
                className="bg-white/10 p-3 rounded-2xl hover:bg-white/20 transition-all text-white/80"
@@ -247,7 +288,8 @@ const ProjectForm: React.FC<ProjectFormProps> = ({ project, onSave }) => {
               <table className="w-full text-left">
                 <thead className="bg-slate-50 text-[9px] font-black uppercase tracking-widest text-slate-400">
                   <tr>
-                    <th className="px-6 py-4">Select Network Code</th>
+                    <th className="px-6 py-4 w-96">ชื่องานโครงข่าย (Select)</th>
+                    <th className="px-6 py-4 w-40">เลขที่โครงข่าย</th>
                     <th className="px-6 py-4">ค่าแรง (100%)</th>
                     <th className="px-6 py-4">คุมงาน (100%)</th>
                     <th className="px-6 py-4">ขนส่ง (100%)</th>
@@ -256,48 +298,67 @@ const ProjectForm: React.FC<ProjectFormProps> = ({ project, onSave }) => {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-50">
-                  {networks.map((net, idx) => (
-                    <tr key={idx} className="hover:bg-slate-50/50">
-                      <td className="px-4 py-3">
-                        <div className="relative">
-                          <select 
-                            className="w-full px-4 py-2 bg-white border border-slate-200 rounded-xl font-bold text-xs appearance-none focus:ring-2 focus:ring-purple-500 outline-none pr-8"
-                            value={net.networkCode}
-                            onChange={e => handleNetworkChange(idx, 'networkCode', e.target.value)}
-                          >
-                            <option value="">-- เลือกโครงข่าย --</option>
-                            {networkDefs.map(def => (
-                              <option key={def.code} value={def.code}>
-                                {def.code} - {def.name}
-                              </option>
-                            ))}
-                          </select>
-                          <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 w-3 h-3 text-slate-400 pointer-events-none" />
-                        </div>
-                      </td>
-                      {['labor_full', 'supervise_full', 'transport_full', 'misc_full'].map(field => (
-                        <td key={field} className="px-4 py-3">
-                          <input 
-                            type="number"
-                            className="w-full px-3 py-2 bg-white border border-slate-200 rounded-xl font-mono text-xs font-bold text-slate-700 focus:ring-2 focus:ring-purple-500 outline-none"
-                            placeholder="0.00"
-                            value={(net as any)[field] || ''}
-                            onChange={e => handleNetworkChange(idx, field as keyof Network, e.target.value)}
-                          />
+                  {networks.map((net, idx) => {
+                    const matchedDef = networkDefs.find(d => d.code === net.networkCode);
+                    
+                    return (
+                      <tr key={idx} className="hover:bg-slate-50/50">
+                        <td className="px-4 py-3">
+                          <div className="relative">
+                            <select 
+                              className="w-full px-4 py-3 bg-white border border-slate-200 rounded-xl font-bold text-xs appearance-none focus:ring-2 focus:ring-purple-500 outline-none pr-8 truncate"
+                              value={matchedDef ? net.networkCode : ""}
+                              onChange={e => onSelectNetworkFromDropdown(idx, e.target.value)}
+                            >
+                              {!matchedDef && net.networkName && (
+                                <option value={net.networkCode}>{net.networkName}</option>
+                              )}
+                              <option value="">-- เลือกชื่องานจากฐานข้อมูล --</option>
+                              {networkDefs.map(def => (
+                                <option key={def.code} value={def.code}>
+                                  {def.name}
+                                </option>
+                              ))}
+                            </select>
+                            <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 w-3 h-3 text-slate-400 pointer-events-none" />
+                          </div>
                         </td>
-                      ))}
-                      <td className="px-4 py-3 text-center">
-                        <button 
-                          type="button"
-                          onClick={() => removeNetwork(idx)}
-                          className="p-2 text-slate-300 hover:text-rose-500 transition-colors disabled:opacity-20"
-                          disabled={networks.length <= 1}
-                        >
-                          <Trash2 className="w-4 h-4" />
-                        </button>
-                      </td>
-                    </tr>
-                  ))}
+                        <td className="px-4 py-3">
+                          <div className="relative">
+                            <Hash className="absolute left-3 top-1/2 -translate-y-1/2 w-3 h-3 text-slate-300" />
+                            <input 
+                              type="text"
+                              className="w-full pl-8 pr-3 py-2 bg-white border border-slate-200 rounded-xl font-mono text-xs font-black text-purple-700 focus:ring-2 focus:ring-purple-500 outline-none"
+                              placeholder="รหัสโครงข่าย"
+                              value={net.networkCode}
+                              onChange={e => handleNetworkChange(idx, 'networkCode', e.target.value)}
+                            />
+                          </div>
+                        </td>
+                        {['labor_full', 'supervise_full', 'transport_full', 'misc_full'].map(field => (
+                          <td key={field} className="px-4 py-3">
+                            <input 
+                              type="number"
+                              className="w-full px-3 py-2 bg-white border border-slate-200 rounded-xl font-mono text-xs font-bold text-slate-700 focus:ring-2 focus:ring-purple-500 outline-none"
+                              placeholder="0.00"
+                              value={(net as any)[field] || ''}
+                              onChange={e => handleNetworkChange(idx, field as keyof Network, e.target.value)}
+                            />
+                          </td>
+                        ))}
+                        <td className="px-4 py-3 text-center">
+                          <button 
+                            type="button"
+                            onClick={() => removeNetwork(idx)}
+                            className="p-2 text-slate-300 hover:text-rose-500 transition-colors disabled:opacity-20"
+                            disabled={networks.length <= 1}
+                          >
+                            <Trash2 className="w-4 h-4" />
+                          </button>
+                        </td>
+                      </tr>
+                    );
+                  })}
                 </tbody>
               </table>
             </div>

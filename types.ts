@@ -14,6 +14,7 @@ export interface NetworkDefinition {
 
 export interface Network {
   networkCode: string;
+  networkName?: string;
   // ยอดเต็ม 100%
   labor_full: number;
   supervise_full: number;

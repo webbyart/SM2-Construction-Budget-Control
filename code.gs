@@ -63,7 +63,7 @@ function getSheet(name) {
   if (!sheet) {
     sheet = ss.insertSheet(name);
     if (name === 'Projects') {
-      sheet.appendRow(['wbs', 'name', 'worker', 'networkCode', 'labor_current', 'supervise_current', 'transport_current', 'misc_current', 'labor_full', 'supervise_full', 'transport_full', 'misc_full', 'maxBudgetPercent', 'approvalNumber', 'approvalDate']);
+      sheet.appendRow(['wbs', 'name', 'worker', 'networkCode', 'networkName', 'labor_current', 'supervise_current', 'transport_current', 'misc_current', 'labor_full', 'supervise_full', 'transport_full', 'misc_full', 'maxBudgetPercent', 'approvalNumber', 'approvalDate']);
     } else if (name === 'Records') {
       sheet.appendRow(['WBS', 'networkCode', 'วันที่', 'รายละเอียด', 'ค่าแรง', 'ควบคุมงาน', 'ขนส่ง', 'เบ็ดเตล็ด', 'RecordID']);
     } else if (name === 'Users') {
@@ -191,7 +191,7 @@ function getAllProjects() {
   const sheet = getSheet('Projects');
   const lastRow = sheet.getLastRow();
   if (lastRow < 2) return [];
-  const data = sheet.getRange(2, 1, lastRow - 1, 15).getValues();
+  const data = sheet.getRange(2, 1, lastRow - 1, 16).getValues();
   const projectsMap = {};
   for (let i = 0; i < data.length; i++) {
     const wbs = data[i][0];
@@ -201,22 +201,23 @@ function getAllProjects() {
         wbs: wbs, 
         name: data[i][1], 
         worker: data[i][2], 
-        maxBudgetPercent: data[i][12], 
-        approvalNumber: data[i][13],
-        approvalDate: data[i][14],
+        maxBudgetPercent: Number(data[i][13]) || 80, 
+        approvalNumber: data[i][14] || '',
+        approvalDate: data[i][15] || '',
         networks: [] 
       };
     }
     projectsMap[wbs].networks.push({
       networkCode: data[i][3] ? data[i][3].toString() : '',
-      labor_balance: Number(data[i][4]) || 0, 
-      supervise_balance: Number(data[i][5]) || 0, 
-      transport_balance: Number(data[i][6]) || 0, 
-      misc_balance: Number(data[i][7]) || 0,
-      labor_full: Number(data[i][8]) || 0, 
-      supervise_full: Number(data[i][9]) || 0, 
-      transport_full: Number(data[i][10]) || 0, 
-      misc_full: Number(data[i][11]) || 0
+      networkName: data[i][4] ? data[i][4].toString() : '',
+      labor_balance: Number(data[i][5]) || 0, 
+      supervise_balance: Number(data[i][6]) || 0, 
+      transport_balance: Number(data[i][7]) || 0, 
+      misc_balance: Number(data[i][8]) || 0,
+      labor_full: Number(data[i][9]) || 0, 
+      supervise_full: Number(data[i][10]) || 0, 
+      transport_full: Number(data[i][11]) || 0, 
+      misc_full: Number(data[i][12]) || 0
     });
   }
   return Object.values(projectsMap);
@@ -225,16 +226,32 @@ function getAllProjects() {
 function saveProject(p) {
   const sheet = getSheet('Projects');
   const data = sheet.getDataRange().getValues();
+  // Delete existing rows for this WBS
   for (let i = data.length - 1; i >= 1; i--) {
-    if (data[i][0].toString() === p.wbs.toString()) sheet.deleteRow(i + 1);
+    if (data[i][0].toString().trim().toUpperCase() === p.wbs.toString().trim().toUpperCase()) {
+      sheet.deleteRow(i + 1);
+    }
   }
+  // Append new rows for each network
   if (p.networks && p.networks.length > 0) {
     p.networks.forEach(n => {
       sheet.appendRow([
-        p.wbs, p.name, p.worker, n.networkCode, 
-        n.labor_balance, n.supervise_balance, n.transport_balance, n.misc_balance, 
-        n.labor_full, n.supervise_full, n.transport_full, n.misc_full, 
-        p.maxBudgetPercent, p.approvalNumber, p.approvalDate
+        p.wbs, 
+        p.name, 
+        p.worker, 
+        n.networkCode, 
+        n.networkName || '',
+        n.labor_balance, 
+        n.supervise_balance, 
+        n.transport_balance, 
+        n.misc_balance, 
+        n.labor_full, 
+        n.supervise_full, 
+        n.transport_full, 
+        n.misc_full, 
+        p.maxBudgetPercent, 
+        p.approvalNumber || '', 
+        p.approvalDate || ''
       ]);
     });
   }
@@ -245,7 +262,9 @@ function deleteProject(wbs) {
   const sheet = getSheet('Projects');
   const data = sheet.getDataRange().getValues();
   for (let i = data.length - 1; i >= 1; i--) {
-    if (data[i][0].toString() === wbs.toString()) sheet.deleteRow(i + 1);
+    if (data[i][0].toString().trim().toUpperCase() === wbs.toString().trim().toUpperCase()) {
+      sheet.deleteRow(i + 1);
+    }
   }
   return { success: true };
 }
@@ -261,9 +280,9 @@ function addCutRecord(r) {
     let maxPercent = 0;
 
     for (let i = 1; i < pData.length; i++) {
-      if (pData[i][0].toString() === r.wbs.toString()) {
-        globalPoolFull += (Number(pData[i][8]) + Number(pData[i][9]) + Number(pData[i][10]) + Number(pData[i][11]));
-        maxPercent = pData[i][12];
+      if (pData[i][0].toString().trim().toUpperCase() === r.wbs.toString().trim().toUpperCase()) {
+        globalPoolFull += (Number(pData[i][9]) + Number(pData[i][10]) + Number(pData[i][11]) + Number(pData[i][12]));
+        maxPercent = Number(pData[i][13]);
         if (pData[i][3].toString() === r.networkCode.toString()) {
           targetRow = i + 1;
         }
@@ -276,7 +295,7 @@ function addCutRecord(r) {
     const recData = recSheet.getDataRange().getValues();
     let sumCuts = 0;
     for (let i = 1; i < recData.length; i++) {
-      if (recData[i][0].toString() === r.wbs.toString()) {
+      if (recData[i][0].toString().trim().toUpperCase() === r.wbs.toString().trim().toUpperCase()) {
         sumCuts += (Number(recData[i][4]) + Number(recData[i][5]) + Number(recData[i][6]) + Number(recData[i][7]));
       }
     }
@@ -286,11 +305,11 @@ function addCutRecord(r) {
       throw new Error("ยอดตัดรวมเกินเพดานงบโครงการ " + maxPercent + "%");
     }
 
-    const current = pSheet.getRange(targetRow, 5, 1, 4).getValues()[0];
-    pSheet.getRange(targetRow, 5).setValue(current[0] - r.labor);
-    pSheet.getRange(targetRow, 6).setValue(current[1] - r.supervise);
-    pSheet.getRange(targetRow, 7).setValue(current[2] - r.transport);
-    pSheet.getRange(targetRow, 8).setValue(current[3] - r.misc);
+    const currentValues = pSheet.getRange(targetRow, 6, 1, 4).getValues()[0];
+    pSheet.getRange(targetRow, 6).setValue(Number(currentValues[0]) - r.labor);
+    pSheet.getRange(targetRow, 7).setValue(Number(currentValues[1]) - r.supervise);
+    pSheet.getRange(targetRow, 8).setValue(Number(currentValues[2]) - r.transport);
+    pSheet.getRange(targetRow, 9).setValue(Number(currentValues[3]) - r.misc);
 
     const recordID = "REC-" + new Date().getTime();
     recSheet.appendRow([r.wbs, r.networkCode, new Date(), r.detail, r.labor, r.supervise, r.transport, r.misc, recordID]);
@@ -315,7 +334,6 @@ function updateCutRecord(recordID, r) {
     }
     if (recRow === -1) throw new Error("ไม่พบรายการที่ต้องการแก้ไข");
 
-    // 1. คืนงบเก่า
     const oldWbs = data[recRow-1][0];
     const oldNet = data[recRow-1][1];
     const oldCuts = [data[recRow-1][4], data[recRow-1][5], data[recRow-1][6], data[recRow-1][7]];
@@ -323,20 +341,17 @@ function updateCutRecord(recordID, r) {
     const pSheet = getSheet('Projects');
     const pData = pSheet.getDataRange().getValues();
     
-    // คืนงบให้โครงการและโครงข่ายเดิม
     for (let j = 1; j < pData.length; j++) {
-      if (pData[j][0].toString() === oldWbs.toString() && pData[j][3].toString() === oldNet.toString()) {
+      if (pData[j][0].toString().trim().toUpperCase() === oldWbs.toString().trim().toUpperCase() && pData[j][3].toString() === oldNet.toString()) {
         const row = j + 1;
-        pSheet.getRange(row, 5).setValue(Number(pData[j][4]) + Number(oldCuts[0]));
-        pSheet.getRange(row, 6).setValue(Number(pData[j][5]) + Number(oldCuts[1]));
-        pSheet.getRange(row, 7).setValue(Number(pData[j][6]) + Number(oldCuts[2]));
-        pSheet.getRange(row, 8).setValue(Number(pData[j][7]) + Number(oldCuts[3]));
+        pSheet.getRange(row, 6).setValue(Number(pData[j][5]) + Number(oldCuts[0]));
+        pSheet.getRange(row, 7).setValue(Number(pData[j][6]) + Number(oldCuts[1]));
+        pSheet.getRange(row, 8).setValue(Number(pData[j][7]) + Number(oldCuts[2]));
+        pSheet.getRange(row, 9).setValue(Number(pData[j][8]) + Number(oldCuts[3]));
         break;
       }
     }
 
-    // 2. ตัดงบใหม่ (เรียกใช้ logic เดิมเพื่อตรวจสอบ limit 80%)
-    // หมายเหตุ: addCutRecord จะ appendRow ใหม่ ดังนั้นเราต้องลบ row เก่าทิ้งก่อน
     recSheet.deleteRow(recRow);
     return addCutRecord(r);
   } finally {
@@ -354,12 +369,12 @@ function deleteRecord(recordID) {
       const pSheet = getSheet('Projects');
       const pData = pSheet.getDataRange().getValues();
       for (let j = 1; j < pData.length; j++) {
-        if (pData[j][0].toString() === wbs.toString() && pData[j][3].toString() === net.toString()) {
+        if (pData[j][0].toString().trim().toUpperCase() === wbs.toString().trim().toUpperCase() && pData[j][3].toString() === net.toString()) {
           const row = j + 1;
-          pSheet.getRange(row, 5).setValue(Number(pData[j][4]) + Number(data[i][4]));
-          pSheet.getRange(row, 6).setValue(Number(pData[j][5]) + Number(data[i][5]));
-          pSheet.getRange(row, 7).setValue(Number(pData[j][6]) + Number(data[i][6]));
-          pSheet.getRange(row, 8).setValue(Number(pData[j][7]) + Number(data[i][7]));
+          pSheet.getRange(row, 6).setValue(Number(pData[j][5]) + Number(data[i][4]));
+          pSheet.getRange(row, 7).setValue(Number(pData[j][6]) + Number(data[i][5]));
+          pSheet.getRange(row, 8).setValue(Number(pData[j][7]) + Number(data[i][6]));
+          pSheet.getRange(row, 9).setValue(Number(pData[j][8]) + Number(data[i][7]));
           break;
         }
       }
@@ -377,11 +392,11 @@ function getAllCutRecords() {
   const recData = recSheet.getRange(2, 1, lastRow - 1, 9).getValues();
   const projects = getAllProjects();
   const pMap = {};
-  projects.forEach(p => pMap[p.wbs] = p);
+  projects.forEach(p => pMap[p.wbs.toUpperCase()] = p);
   const results = [];
   for (let i = 0; i < recData.length; i++) {
     const wbs = recData[i][0];
-    const project = pMap[wbs] || { name: 'Unknown', worker: 'Unknown' };
+    const project = pMap[wbs.toString().toUpperCase()] || { name: 'Unknown', worker: 'Unknown' };
     
     let dateVal = recData[i][2];
     let isoDate = "";
