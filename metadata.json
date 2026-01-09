@@ -1,0 +1,5 @@
+{
+  "name": "SM2 Construction Budget Control",
+  "description": "A high-end construction budget management system that allows engineers to track project WBS, manage shared budget pools (80% rule), and record budget cuts with full history and AI-powered summaries.",
+  "requestFramePermissions": []
+}

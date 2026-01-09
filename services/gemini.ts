@@ -1,0 +1,42 @@
+
+import { GoogleGenAI } from "@google/genai";
+import { Project, CutRecord } from "../types";
+
+// Always initialize GoogleGenAI with a named parameter for the API key from process.env.API_KEY
+const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+
+export const GeminiService = {
+  async analyzeBudget(project: Project, records: CutRecord[]) {
+    try {
+      const prompt = `
+        คุณคือผู้เชี่ยวชาญด้านการวิเคราะห์งบประมาณก่อสร้าง (SM2 Control)
+        กรุณาวิเคราะห์ข้อมูลโครงการต่อไปนี้:
+        โครงการ: ${project.name} (WBS: ${project.wbs})
+        ช่าง: ${project.worker}
+        งบประมาณเต็ม:
+        - ค่าแรง: ${project.labor_full.toLocaleString()}
+        - ควบคุมงาน: ${project.supervise_full.toLocaleString()}
+        - ขนส่ง: ${project.transport_full.toLocaleString()}
+        - เบ็ดเตล็ด: ${project.misc_full.toLocaleString()}
+        เพดานงบที่ตัดได้: ${project.maxBudgetPercent}%
+
+        ประวัติการตัดงบ:
+        ${records.map(r => `- ${new Date(r.timestamp).toLocaleDateString()}: ${r.detail} (รวม ${(r.labor_cut + r.supervise_cut + r.transport_cut + r.misc_cut).toLocaleString()})`).join('\n')}
+
+        ช่วยสรุปสถานะปัจจุบันใน 3-4 ประโยคสั้นๆ ว่าการใช้จ่ายเป็นอย่างไร เหลือวงเงินเท่าไหร่ และมีข้อควรระวังอะไรไหม (ตอบเป็นภาษาไทย)
+      `;
+
+      // Use ai.models.generateContent to query GenAI with the model name and prompt directly
+      const response = await ai.models.generateContent({
+        model: 'gemini-3-flash-preview',
+        contents: prompt
+      });
+
+      // Extract generated text from the response object's .text property
+      return response.text;
+    } catch (error) {
+      console.error("Gemini Analysis Error:", error);
+      return "ไม่สามารถวิเคราะห์ข้อมูลได้ในขณะนี้";
+    }
+  }
+};
