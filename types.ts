@@ -7,27 +7,38 @@ export interface User {
   role: Role;
 }
 
-export interface Project {
-  wbs: string;
+export interface NetworkDefinition {
+  code: string;
   name: string;
-  worker: string;
+}
+
+export interface Network {
+  networkCode: string;
   // ยอดเต็ม 100%
   labor_full: number;
   supervise_full: number;
   transport_full: number;
   misc_full: number;
-  // ยอดคงเหลือปัจจุบัน (ยอดที่ยังไม่ได้ตัด)
+  // ยอดคงเหลือปัจจุบัน
   labor_balance: number;
   supervise_balance: number;
   transport_balance: number;
   misc_balance: number;
-  maxBudgetPercent: number; // เช่น 80
+}
+
+export interface Project {
+  wbs: string; // Project ID
+  name: string;
+  worker: string;
+  maxBudgetPercent: number;
+  networks: Network[];
 }
 
 export interface CutRecord {
   id: string;
   timestamp: string;
   wbs: string;
+  networkCode: string; 
   projectName: string;
   worker: string;
   detail: string;

@@ -1,10 +1,11 @@
 
 import React, { useState, useEffect } from 'react';
 import { StorageService, ProjectStats } from '../services/storage';
-import { BarChart3, TrendingUp, AlertTriangle, Loader2 } from 'lucide-react';
+import { BarChart3, TrendingUp, AlertTriangle, Loader2, Search } from 'lucide-react';
 
 const ProjectOverview: React.FC = () => {
   const [projects, setProjects] = useState<ProjectStats[]>([]);
+  const [search, setSearch] = useState('');
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -22,6 +23,12 @@ const ProjectOverview: React.FC = () => {
     fetchProjects();
   }, []);
 
+  const filteredProjects = projects.filter(p => 
+    p.wbs.toLowerCase().includes(search.toLowerCase()) ||
+    p.name.toLowerCase().includes(search.toLowerCase()) ||
+    p.worker.toLowerCase().includes(search.toLowerCase())
+  );
+
   if (loading) {
     return (
       <div className="flex flex-col items-center justify-center py-20">
@@ -33,16 +40,31 @@ const ProjectOverview: React.FC = () => {
 
   return (
     <div className="space-y-6 animate-in fade-in duration-500">
-      <div className="flex items-center justify-between mb-2">
-         <h2 className="text-xl font-black text-slate-800 tracking-tight uppercase">Live Project Overview</h2>
-         <div className="flex items-center gap-2 px-3 py-1 bg-white border border-slate-100 rounded-full shadow-sm">
-            <div className="w-2 h-2 bg-emerald-500 rounded-full animate-ping"></div>
-            <span className="text-[10px] font-black text-emerald-600 uppercase tracking-widest">Connected</span>
+      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-2">
+         <div>
+            <h2 className="text-xl font-black text-slate-800 tracking-tight uppercase">Live Project Overview</h2>
+            <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">สถานะงบประมาณและภาระงานล่าสุด</p>
+         </div>
+         <div className="flex items-center gap-4">
+            <div className="relative">
+               <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-300" />
+               <input 
+                 type="text"
+                 placeholder="ค้นหาโครงการ..."
+                 className="pl-10 pr-4 py-2 bg-white border border-slate-100 rounded-full text-xs font-bold outline-none focus:ring-2 focus:ring-purple-500 w-64 shadow-sm"
+                 value={search}
+                 onChange={e => setSearch(e.target.value)}
+               />
+            </div>
+            <div className="flex items-center gap-2 px-3 py-1 bg-white border border-slate-100 rounded-full shadow-sm">
+               <div className="w-2 h-2 bg-emerald-500 rounded-full animate-ping"></div>
+               <span className="text-[10px] font-black text-emerald-600 uppercase tracking-widest">Connected</span>
+            </div>
          </div>
       </div>
 
       <div className="grid grid-cols-1 gap-4">
-        {projects.map(p => (
+        {filteredProjects.map(p => (
           <div key={p.wbs} className="bg-white p-6 rounded-[32px] shadow-sm border border-slate-100 flex flex-col md:flex-row gap-6 items-center hover:shadow-md transition-all group">
             <div className="w-full md:w-1/3">
                <div className="flex items-center gap-2 mb-1">
@@ -67,7 +89,7 @@ const ProjectOverview: React.FC = () => {
                </div>
                <div className="bg-amber-50/30 p-4 rounded-2xl border border-amber-100/50">
                   <p className="text-[9px] text-amber-500 font-black uppercase tracking-widest mb-1">Limit Target</p>
-                  <p className="text-base font-black text-amber-600 tracking-tight">{p.totalBudgetPercent.toLocaleString()} ฿</p>
+                  <p className="text-base font-black text-amber-600 tracking-tight">{p.totalLimitBudget.toLocaleString()} ฿</p>
                </div>
                <div className="bg-rose-50/30 p-4 rounded-2xl border border-rose-100/50">
                   <p className="text-[9px] text-rose-500 font-black uppercase tracking-widest mb-1">Total Cut</p>
@@ -75,7 +97,7 @@ const ProjectOverview: React.FC = () => {
                </div>
                <div className="bg-emerald-50/30 p-4 rounded-2xl border border-emerald-100/50">
                   <p className="text-[9px] text-emerald-500 font-black uppercase tracking-widest mb-1">Remaining</p>
-                  <p className="text-base font-black text-emerald-600 tracking-tight">{p.remainingBudgetPercent.toLocaleString()} ฿</p>
+                  <p className="text-base font-black text-emerald-600 tracking-tight">{p.remainingLimit.toLocaleString()} ฿</p>
                </div>
             </div>
 
@@ -97,11 +119,11 @@ const ProjectOverview: React.FC = () => {
           </div>
         ))}
 
-        {projects.length === 0 && !loading && (
+        {filteredProjects.length === 0 && !loading && (
           <div className="bg-white p-20 rounded-[40px] border-2 border-dashed border-slate-200 text-center shadow-inner">
             <BarChart3 className="w-20 h-20 text-slate-100 mx-auto mb-6" />
             <h4 className="text-xl font-black text-slate-300 uppercase tracking-tighter">No Active Projects Found</h4>
-            <p className="text-slate-400 font-medium mt-2">กรุณาเพิ่มโครงการใหม่ในเมนู "เพิ่ม/แก้ไขงาน"</p>
+            <p className="text-slate-400 font-medium mt-2">ไม่พบโครงการตามที่ค้นหา หรือกรุณาเพิ่มโครงการใหม่</p>
           </div>
         )}
       </div>

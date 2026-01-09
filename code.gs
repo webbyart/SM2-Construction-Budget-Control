@@ -1,177 +1,240 @@
 
 const SPREADSHEET_ID = '1_SdZv-8jhrjl-k-mawppG2oe_3g1QlzUn2Z46Z61t70';
 
-/**
- * ฟังก์ชันหลักสำหรับจัดการ Request
- * รองรับทั้งการเข้าชมผ่าน Browser (HTML) และการเรียกใช้แบบ API (JSON)
- */
 function doGet(e) {
-  // ตรวจสอบพารามิเตอร์เบื้องต้น
   if (!e || !e.parameter) {
-    return HtmlService.createHtmlOutput('<h1>SM2 Control System</h1><p>Application is ready. Please access via the provided Web App URL.</p>');
+    return HtmlService.createHtmlOutput('<h1>SM2 Control System</h1><p>Application is ready.</p>');
   }
 
-  // จัดการ API Request (กรณีมี action)
-  if (e.parameter.action) {
+  const action = e.parameter.action;
+  if (action) {
     let result;
-    const action = e.parameter.action;
     let args = [];
     
     try {
       if (e.parameter.args) {
-        const rawArgs = e.parameter.args;
-        try {
-          args = JSON.parse(rawArgs);
-        } catch (e1) {
-          // ถ้า parse ไม่ได้ในรอบแรก ให้ลอง decode ก่อน
-          args = JSON.parse(decodeURIComponent(rawArgs));
-        }
+        args = JSON.parse(decodeURIComponent(e.parameter.args));
       }
     } catch (parseError) {
-      return createJsonResponse({ success: false, message: 'Invalid arguments format: ' + parseError.toString() });
+      return createJsonResponse({ success: false, message: 'Invalid arguments format' });
     }
 
     try {
-      switch (action) {
-        case 'authenticateUser': result = authenticateUser(...args); break;
-        case 'getAllProjects': result = getAllProjects(); break;
-        case 'addProject': result = addProject(...args); break;
-        case 'updateProject': result = updateProject(...args); break;
-        case 'deleteProject': result = deleteProject(...args); break;
-        case 'addCutRecord': result = addCutRecord(...args); break;
-        case 'deleteRecord': result = deleteRecord(...args); break;
-        case 'getAllCutRecords': result = getAllCutRecords(); break;
-        case 'getDashboardData': result = getDashboardData(); break;
-        case 'getAllUsers': result = getAllUsers(); break;
-        case 'addUser': result = addUser(...args); break;
-        case 'deleteUser': result = deleteUser(...args); break;
-        default: throw new Error('Action "' + action + '" not recognized');
-      }
-      return createJsonResponse(result);
+      if (action === 'authenticateUser') result = authenticateUser(...args);
+      else if (action === 'getAllProjects') result = getAllProjects();
+      else if (action === 'saveProject') result = saveProject(...args);
+      else if (action === 'deleteProject') result = deleteProject(...args);
+      else if (action === 'addCutRecord') result = addCutRecord(...args);
+      else if (action === 'updateCutRecord') result = updateCutRecord(...args);
+      else if (action === 'deleteRecord') result = deleteRecord(...args);
+      else if (action === 'getAllCutRecords') result = getAllCutRecords();
+      else if (action === 'getDashboardData') result = getDashboardData();
+      else if (action === 'getAllUsers') result = getAllUsers();
+      else if (action === 'addUser') result = addUser(...args);
+      else if (action === 'deleteUser') result = deleteUser(...args);
+      else if (action === 'getNetworkDefinitions') result = getNetworkDefinitions();
+      else if (action === 'saveNetworkDefinition') result = saveNetworkDefinition(...args);
+      else if (action === 'deleteNetworkDefinition') result = deleteNetworkDefinition(...args);
+      else if (action === 'getAllWorkers') result = getAllWorkers();
+      else if (action === 'saveWorker') result = saveWorker(...args);
+      else if (action === 'deleteWorker') result = deleteWorker(...args);
+      else throw new Error('Action "' + action + '" not found');
+
+      return createJsonResponse({ success: true, data: result });
     } catch (error) {
-      return createJsonResponse({ success: false, message: 'Server Logic Error: ' + error.toString() });
+      return createJsonResponse({ success: false, message: error.toString() });
     }
   }
 
-  // กรณีเข้าชม UI ปกติ
-  try {
-    return HtmlService.createHtmlOutputFromFile('index')
-      .setTitle('SM2 Control System')
-      .setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL)
-      .addMetaTag('viewport', 'width=device-width, initial-scale=1');
-  } catch (err) {
-    return HtmlService.createHtmlOutput('<h1>Interface Error</h1><p>' + err.toString() + '</p>');
-  }
+  return HtmlService.createHtmlOutputFromFile('index')
+    .setTitle('SM2 Control System')
+    .setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL)
+    .addMetaTag('viewport', 'width=device-width, initial-scale=1');
 }
 
-/**
- * ฟังก์ชันช่วยสร้าง JSON Response พร้อมส่งออก (ContentService ช่วยเรื่อง CORS อัตโนมัติ)
- */
 function createJsonResponse(data) {
-  const jsonOutput = JSON.stringify(data || {});
-  return ContentService.createTextOutput(jsonOutput)
+  return ContentService.createTextOutput(JSON.stringify(data))
     .setMimeType(ContentService.MimeType.JSON);
 }
 
-/**
- * ช่วยจัดการดึง Sheet หรือสร้างใหม่ถ้าไม่มี
- */
 function getSheet(name) {
-  try {
-    const ss = SpreadsheetApp.openById(SPREADSHEET_ID);
-    let sheet = ss.getSheetByName(name);
-    if (!sheet) {
-      sheet = ss.insertSheet(name);
-      if (name === 'Projects') {
-        sheet.appendRow(['wbs', 'name', 'worker', 'labor_current', 'supervise_current', 'transport_current', 'misc_current', 'labor_full', 'supervise_full', 'transport_full', 'misc_full', 'maxBudgetPercent']);
-      } else if (name === 'Records') {
-        sheet.appendRow(['WBS', 'วันที่', 'รายละเอียด', 'ค่าแรง', 'ควบคุมงาน', 'ขนส่ง', 'เบ็ดเตล็ด', 'RecordID']);
-      } else if (name === 'Users') {
-        sheet.appendRow(['Username', 'Password', 'Role']);
-        sheet.appendRow(['admin', '1234', 'admin']);
-      }
+  const ss = SpreadsheetApp.openById(SPREADSHEET_ID);
+  let sheet = ss.getSheetByName(name);
+  if (!sheet) {
+    sheet = ss.insertSheet(name);
+    if (name === 'Projects') {
+      sheet.appendRow(['wbs', 'name', 'worker', 'networkCode', 'labor_current', 'supervise_current', 'transport_current', 'misc_current', 'labor_full', 'supervise_full', 'transport_full', 'misc_full', 'maxBudgetPercent']);
+    } else if (name === 'Records') {
+      sheet.appendRow(['WBS', 'networkCode', 'วันที่', 'รายละเอียด', 'ค่าแรง', 'ควบคุมงาน', 'ขนส่ง', 'เบ็ดเตล็ด', 'RecordID']);
+    } else if (name === 'Users') {
+      sheet.appendRow(['Username', 'Password', 'Role']);
+      sheet.appendRow(['admin', '1234', 'admin']);
+    } else if (name === 'Detail') {
+      sheet.appendRow(['Code', 'Name']);
+    } else if (name === 'Workers') {
+      sheet.appendRow(['ID', 'Name', 'Position']);
     }
-    return sheet;
-  } catch (e) {
-    throw new Error('ไม่สามารถเข้าถึง Spreadsheet ได้: ' + e.message);
   }
+  return sheet;
+}
+
+function getNetworkDefinitions() {
+  const sheet = getSheet('Detail');
+  const lastRow = sheet.getLastRow();
+  if (lastRow < 2) return [];
+  const data = sheet.getRange(2, 1, lastRow - 1, 2).getValues();
+  return data.map(r => ({ 
+    code: r[0] ? r[0].toString().trim() : '', 
+    name: r[1] ? r[1].toString().trim() : '' 
+  })).filter(item => item.code !== '');
+}
+
+function saveNetworkDefinition(def) {
+  const sheet = getSheet('Detail');
+  const data = sheet.getDataRange().getValues();
+  let found = false;
+  for (let i = 1; i < data.length; i++) {
+    if (data[i][0].toString().trim() === def.code.toString().trim()) {
+      sheet.getRange(i + 1, 2).setValue(def.name);
+      found = true;
+      break;
+    }
+  }
+  if (!found) sheet.appendRow([def.code, def.name]);
+  return { success: true };
+}
+
+function deleteNetworkDefinition(code) {
+  const sheet = getSheet('Detail');
+  const data = sheet.getDataRange().getValues();
+  for (let i = 1; i < data.length; i++) {
+    if (data[i][0].toString().trim() === code.toString().trim()) {
+      sheet.deleteRow(i + 1);
+      return { success: true };
+    }
+  }
+  return { success: false };
+}
+
+function getAllWorkers() {
+  const sheet = getSheet('Workers');
+  const lastRow = sheet.getLastRow();
+  if (lastRow < 2) return [];
+  const data = sheet.getRange(2, 1, lastRow - 1, 3).getValues();
+  return data.map(r => ({ 
+    id: r[0] ? r[0].toString().trim() : '', 
+    name: r[1] ? r[1].toString().trim() : '', 
+    position: r[2] ? r[2].toString().trim() : '' 
+  })).filter(item => item.name !== '');
+}
+
+function saveWorker(w) {
+  const sheet = getSheet('Workers');
+  const data = sheet.getDataRange().getValues();
+  let found = false;
+  for (let i = 1; i < data.length; i++) {
+    if (data[i][0].toString().trim() === w.id.toString().trim()) {
+      sheet.getRange(i + 1, 2, 1, 2).setValues([[w.name, w.position]]);
+      found = true;
+      break;
+    }
+  }
+  if (!found) sheet.appendRow([w.id, w.name, w.position]);
+  return { success: true };
+}
+
+function deleteWorker(id) {
+  const sheet = getSheet('Workers');
+  const data = sheet.getDataRange().getValues();
+  for (let i = 1; i < data.length; i++) {
+    if (data[i][0].toString().trim() === id.toString().trim()) {
+      sheet.deleteRow(i + 1);
+      return { success: true };
+    }
+  }
+  return { success: false };
 }
 
 function authenticateUser(username, password) {
-  const sheet = getSheet('Users');
-  const data = sheet.getDataRange().getValues();
+  const data = getSheet('Users').getDataRange().getValues();
   for (let i = 1; i < data.length; i++) {
-    if (data[i][0].toString().trim() === username.toString().trim() && data[i][1].toString().trim() === password.toString().trim()) {
-      return { success: true, username: data[i][0], role: data[i][2], message: 'เข้าสู่ระบบสำเร็จ' };
+    if (data[i][0].toString().trim() === username && data[i][1].toString().trim() === password) {
+      return { success: true, username: data[i][0], role: data[i][2] };
     }
   }
   return { success: false, message: 'ชื่อผู้ใช้หรือรหัสผ่านไม่ถูกต้อง' };
 }
 
+function getAllUsers() {
+  const data = getSheet('Users').getDataRange().getValues();
+  return data.slice(1).map(r => ({ username: r[0], role: r[2] }));
+}
+
+function addUser(u) {
+  getSheet('Users').appendRow([u.username, u.password, u.role]);
+  return { success: true };
+}
+
+function deleteUser(username) {
+  const sheet = getSheet('Users');
+  const data = sheet.getDataRange().getValues();
+  for (let i = 1; i < data.length; i++) {
+    if (data[i][0] === username) {
+      sheet.deleteRow(i + 1);
+      return { success: true };
+    }
+  }
+  return { success: false };
+}
+
 function getAllProjects() {
   const sheet = getSheet('Projects');
-  const data = sheet.getDataRange().getValues();
-  const projects = [];
-  for (let i = 1; i < data.length; i++) {
-    projects.push({
-      wbs: data[i][0],
-      name: data[i][1],
-      worker: data[i][2],
-      labor: data[i][3],
-      supervise: data[i][4],
-      transport: data[i][5],
-      misc: data[i][6],
-      labor_full: data[i][7],
-      supervise_full: data[i][8],
-      transport_full: data[i][9],
-      misc_full: data[i][10],
-      maxBudgetPercent: data[i][11],
-      rowIndex: i + 1
+  const lastRow = sheet.getLastRow();
+  if (lastRow < 2) return [];
+  const data = sheet.getRange(2, 1, lastRow - 1, 13).getValues();
+  const projectsMap = {};
+  for (let i = 0; i < data.length; i++) {
+    const wbs = data[i][0];
+    if (!wbs) continue;
+    if (!projectsMap[wbs]) {
+      projectsMap[wbs] = { wbs: wbs, name: data[i][1], worker: data[i][2], maxBudgetPercent: data[i][12], networks: [] };
+    }
+    projectsMap[wbs].networks.push({
+      networkCode: data[i][3] ? data[i][3].toString() : '',
+      labor_balance: Number(data[i][4]) || 0, 
+      supervise_balance: Number(data[i][5]) || 0, 
+      transport_balance: Number(data[i][6]) || 0, 
+      misc_balance: Number(data[i][7]) || 0,
+      labor_full: Number(data[i][8]) || 0, 
+      supervise_full: Number(data[i][9]) || 0, 
+      transport_full: Number(data[i][10]) || 0, 
+      misc_full: Number(data[i][11]) || 0
     });
   }
-  return projects;
+  return Object.values(projectsMap);
 }
 
-function addProject(p) {
+function saveProject(p) {
   const sheet = getSheet('Projects');
-  sheet.appendRow([
-    p.wbs, p.name, p.worker, 
-    p.labor_current, p.supervise_current, p.transport_current, p.misc_current,
-    p.labor_full, p.supervise_full, p.transport_full, p.misc_full,
-    p.maxBudgetPercent
-  ]);
-  return { success: true, message: 'เพิ่มโครงการสำเร็จ' };
-}
-
-function updateProject(p) {
-  const sheet = getSheet('Projects');
-  if (p.rowIndex) {
-    sheet.getRange(p.rowIndex, 1, 1, 12).setValues([[
-      p.wbs, p.name, p.worker, 
-      p.labor_current, p.supervise_current, p.transport_current, p.misc_current,
-      p.labor_full, p.supervise_full, p.transport_full, p.misc_full,
-      p.maxBudgetPercent
-    ]]);
-    return { success: true, message: 'อัปเดตข้อมูลสำเร็จ' };
+  const data = sheet.getDataRange().getValues();
+  for (let i = data.length - 1; i >= 1; i--) {
+    if (data[i][0].toString() === p.wbs.toString()) sheet.deleteRow(i + 1);
   }
-  return { success: false, message: 'ไม่พบตำแหน่งแถวที่ต้องการแก้ไข' };
+  if (p.networks && p.networks.length > 0) {
+    p.networks.forEach(n => {
+      sheet.appendRow([p.wbs, p.name, p.worker, n.networkCode, n.labor_balance, n.supervise_balance, n.transport_balance, n.misc_balance, n.labor_full, n.supervise_full, n.transport_full, n.misc_full, p.maxBudgetPercent]);
+    });
+  }
+  return { success: true };
 }
 
 function deleteProject(wbs) {
   const sheet = getSheet('Projects');
   const data = sheet.getDataRange().getValues();
-  for (let i = 1; i < data.length; i++) {
-    if (data[i][0].toString() === wbs.toString()) {
-      sheet.deleteRow(i + 1);
-      const recSheet = getSheet('Records');
-      const recData = recSheet.getDataRange().getValues();
-      for (let j = recData.length - 1; j >= 1; j--) {
-        if (recData[j][0].toString() === wbs.toString()) recSheet.deleteRow(j + 1);
-      }
-      return { success: true, message: 'ลบโครงการและประวัติเรียบร้อย' };
-    }
+  for (let i = data.length - 1; i >= 1; i--) {
+    if (data[i][0].toString() === wbs.toString()) sheet.deleteRow(i + 1);
   }
-  return { success: false, message: 'ไม่พบรหัส WBS' };
+  return { success: true };
 }
 
 function addCutRecord(r) {
@@ -180,174 +243,179 @@ function addCutRecord(r) {
   try {
     const pSheet = getSheet('Projects');
     const pData = pSheet.getDataRange().getValues();
-    let projectRow = -1;
-    let p = {};
+    let targetRow = -1;
+    let globalPoolFull = 0;
+    let maxPercent = 0;
 
     for (let i = 1; i < pData.length; i++) {
-      if (pData[i][0].toString().trim() === r.wbs.toString().trim()) {
-        projectRow = i + 1;
-        p = {
-          labor_curr: pData[i][3], supervise_curr: pData[i][4], transport_curr: pData[i][5], misc_curr: pData[i][6],
-          labor_full: pData[i][7], supervise_full: pData[i][8], transport_full: pData[i][9], misc_full: pData[i][10],
-          maxPercent: pData[i][11]
-        };
-        break;
+      if (pData[i][0].toString() === r.wbs.toString()) {
+        globalPoolFull += (Number(pData[i][8]) + Number(pData[i][9]) + Number(pData[i][10]) + Number(pData[i][11]));
+        maxPercent = pData[i][12];
+        if (pData[i][3].toString() === r.networkCode.toString()) {
+          targetRow = i + 1;
+        }
       }
     }
 
-    if (projectRow == -1) throw new Error("ไม่พบโครงการรหัส WBS นี้");
-
-    const totalFull = p.labor_full + p.supervise_full + p.transport_full + p.misc_full;
-    const globalLimit = totalFull * (p.maxPercent / 100);
-    
+    if (targetRow === -1) throw new Error("ไม่พบรหัสโครงข่าย " + r.networkCode);
+    const globalLimit = globalPoolFull * (maxPercent / 100);
     const recSheet = getSheet('Records');
     const recData = recSheet.getDataRange().getValues();
     let sumCuts = 0;
     for (let i = 1; i < recData.length; i++) {
-      if (recData[i][0].toString().trim() === r.wbs.toString().trim()) {
-        sumCuts += (Number(recData[i][3]) + Number(recData[i][4]) + Number(recData[i][5]) + Number(recData[i][6]));
+      if (recData[i][0].toString() === r.wbs.toString()) {
+        sumCuts += (Number(recData[i][4]) + Number(recData[i][5]) + Number(recData[i][6]) + Number(recData[i][7]));
       }
     }
 
     const newCutTotal = Number(r.labor) + Number(r.supervise) + Number(r.transport) + Number(r.misc);
     if (sumCuts + newCutTotal > globalLimit + 0.1) {
-      throw new Error("ยอดตัดงบรวมจะเกินวงเงิน " + p.maxPercent + "% ที่กำหนดไว้ (ตัดได้สูงสุด " + globalLimit.toLocaleString() + " ฿)");
+      throw new Error("ยอดตัดรวมเกินเพดานงบโครงการ " + maxPercent + "%");
     }
 
-    pSheet.getRange(projectRow, 4).setValue(p.labor_curr - r.labor);
-    pSheet.getRange(projectRow, 5).setValue(p.supervise_curr - r.supervise);
-    pSheet.getRange(projectRow, 6).setValue(p.transport_curr - r.transport);
-    pSheet.getRange(projectRow, 7).setValue(p.misc_curr - r.misc);
+    const current = pSheet.getRange(targetRow, 5, 1, 4).getValues()[0];
+    pSheet.getRange(targetRow, 5).setValue(current[0] - r.labor);
+    pSheet.getRange(targetRow, 6).setValue(current[1] - r.supervise);
+    pSheet.getRange(targetRow, 7).setValue(current[2] - r.transport);
+    pSheet.getRange(targetRow, 8).setValue(current[3] - r.misc);
 
     const recordID = "REC-" + new Date().getTime();
-    recSheet.appendRow([r.wbs, new Date(), r.detail, r.labor, r.supervise, r.transport, r.misc, recordID]);
+    recSheet.appendRow([r.wbs, r.networkCode, new Date(), r.detail, r.labor, r.supervise, r.transport, r.misc, recordID]);
+    return { success: true };
+  } finally {
+    lock.releaseLock();
+  }
+}
 
-    return { success: true, message: 'บันทึกการตัดงบเรียบร้อย' };
-  } catch (e) {
-    return { success: false, message: e.toString() };
+function updateCutRecord(recordID, r) {
+  const lock = LockService.getScriptLock();
+  lock.waitLock(30000);
+  try {
+    const recSheet = getSheet('Records');
+    const data = recSheet.getDataRange().getValues();
+    let recRow = -1;
+    for (let i = 1; i < data.length; i++) {
+      if (data[i][8] === recordID) {
+        recRow = i + 1;
+        break;
+      }
+    }
+    if (recRow === -1) throw new Error("ไม่พบรายการที่ต้องการแก้ไข");
+
+    // 1. คืนงบเก่า
+    const oldWbs = data[recRow-1][0];
+    const oldNet = data[recRow-1][1];
+    const oldCuts = [data[recRow-1][4], data[recRow-1][5], data[recRow-1][6], data[recRow-1][7]];
+    
+    const pSheet = getSheet('Projects');
+    const pData = pSheet.getDataRange().getValues();
+    
+    // คืนงบให้โครงการและโครงข่ายเดิม
+    for (let j = 1; j < pData.length; j++) {
+      if (pData[j][0].toString() === oldWbs.toString() && pData[j][3].toString() === oldNet.toString()) {
+        const row = j + 1;
+        pSheet.getRange(row, 5).setValue(Number(pData[j][4]) + Number(oldCuts[0]));
+        pSheet.getRange(row, 6).setValue(Number(pData[j][5]) + Number(oldCuts[1]));
+        pSheet.getRange(row, 7).setValue(Number(pData[j][6]) + Number(oldCuts[2]));
+        pSheet.getRange(row, 8).setValue(Number(pData[j][7]) + Number(oldCuts[3]));
+        break;
+      }
+    }
+
+    // 2. ตัดงบใหม่ (เรียกใช้ logic เดิมเพื่อตรวจสอบ limit 80%)
+    // หมายเหตุ: addCutRecord จะ appendRow ใหม่ ดังนั้นเราต้องลบ row เก่าทิ้งก่อน
+    recSheet.deleteRow(recRow);
+    return addCutRecord(r);
   } finally {
     lock.releaseLock();
   }
 }
 
 function deleteRecord(recordID) {
-  const lock = LockService.getScriptLock();
-  lock.waitLock(30000);
-  try {
-    const recSheet = getSheet('Records');
-    const recData = recSheet.getDataRange().getValues();
-    let rowToToDelete = -1;
-    let recordInfo = null;
-
-    for (let i = 1; i < recData.length; i++) {
-      if (recData[i][7] === recordID) {
-        rowToToDelete = i + 1;
-        recordInfo = {
-          wbs: recData[i][0],
-          labor: recData[i][3], supervise: recData[i][4], transport: recData[i][5], misc: recData[i][6]
-        };
-        break;
+  const recSheet = getSheet('Records');
+  const data = recSheet.getDataRange().getValues();
+  for (let i = 1; i < data.length; i++) {
+    if (data[i][8] === recordID) {
+      const wbs = data[i][0];
+      const net = data[i][1];
+      const pSheet = getSheet('Projects');
+      const pData = pSheet.getDataRange().getValues();
+      for (let j = 1; j < pData.length; j++) {
+        if (pData[j][0].toString() === wbs.toString() && pData[j][3].toString() === net.toString()) {
+          const row = j + 1;
+          pSheet.getRange(row, 5).setValue(Number(pData[j][4]) + Number(data[i][4]));
+          pSheet.getRange(row, 6).setValue(Number(pData[j][5]) + Number(data[i][5]));
+          pSheet.getRange(row, 7).setValue(Number(pData[j][6]) + Number(data[i][6]));
+          pSheet.getRange(row, 8).setValue(Number(pData[j][7]) + Number(data[i][7]));
+          break;
+        }
       }
+      recSheet.deleteRow(i + 1);
+      return { success: true };
     }
-
-    if (rowToToDelete === -1) throw new Error("ไม่พบรายการตัดงบที่ต้องการลบ");
-
-    const pSheet = getSheet('Projects');
-    const pData = pSheet.getDataRange().getValues();
-    for (let i = 1; i < pData.length; i++) {
-      if (pData[i][0].toString().trim() === recordInfo.wbs.toString().trim()) {
-        const pRow = i + 1;
-        pSheet.getRange(pRow, 4).setValue(Number(pData[i][3]) + Number(recordInfo.labor));
-        pSheet.getRange(pRow, 5).setValue(Number(pData[i][4]) + Number(recordInfo.supervise));
-        pSheet.getRange(pRow, 6).setValue(Number(pData[i][5]) + Number(recordInfo.transport));
-        pSheet.getRange(pRow, 7).setValue(Number(pData[i][6]) + Number(recordInfo.misc));
-        break;
-      }
-    }
-
-    recSheet.deleteRow(rowToToDelete);
-    return { success: true, message: 'ลบรายการและคืนงบประมาณเรียบร้อย' };
-  } catch (e) {
-    return { success: false, message: e.toString() };
-  } finally {
-    lock.releaseLock();
   }
+  return { success: false };
 }
 
 function getAllCutRecords() {
   const recSheet = getSheet('Records');
-  const pSheet = getSheet('Projects');
-  const recData = recSheet.getDataRange().getValues();
-  const pData = pSheet.getDataRange().getValues();
-  
+  const lastRow = recSheet.getLastRow();
+  if (lastRow < 2) return [];
+  const recData = recSheet.getRange(2, 1, lastRow - 1, 9).getValues();
+  const projects = getAllProjects();
   const pMap = {};
-  for(let i=1; i<pData.length; i++) {
-    pMap[pData[i][0]] = { name: pData[i][1], worker: pData[i][2] };
-  }
-
-  const records = [];
-  for (let i = 1; i < recData.length; i++) {
+  projects.forEach(p => pMap[p.wbs] = p);
+  const results = [];
+  for (let i = 0; i < recData.length; i++) {
     const wbs = recData[i][0];
     const project = pMap[wbs] || { name: 'Unknown', worker: 'Unknown' };
-    records.push({
-      wbs: wbs,
-      projectName: project.name,
-      worker: project.worker,
-      date: recData[i][1],
-      detail: recData[i][2],
-      labor: recData[i][3],
-      supervise: recData[i][4],
-      transport: recData[i][5],
-      misc: recData[i][6],
-      id: recData[i][7]
+    
+    let dateVal = recData[i][2];
+    let isoDate = "";
+    try {
+      if (dateVal instanceof Date) {
+        isoDate = dateVal.toISOString();
+      } else if (dateVal) {
+        isoDate = new Date(dateVal).toISOString();
+      }
+    } catch (e) {
+      isoDate = new Date().toISOString();
+    }
+
+    results.push({ 
+      wbs: wbs, 
+      networkCode: recData[i][1] ? recData[i][1].toString() : '', 
+      projectName: project.name, 
+      worker: project.worker, 
+      date: isoDate, 
+      detail: recData[i][3], 
+      labor: recData[i][4], 
+      supervise: recData[i][5], 
+      transport: recData[i][6], 
+      misc: recData[i][7], 
+      id: recData[i][8] 
     });
   }
-  return records.reverse();
+  return results.reverse();
 }
 
 function getDashboardData() {
   const projects = getAllProjects();
   const records = getAllCutRecords();
-  
-  let totalBudget = 0;
-  const workerCounts = {};
+  let totalFull = 0;
+  const workers = {};
   projects.forEach(p => {
-    totalBudget += (Number(p.labor_full) + Number(p.supervise_full) + Number(p.transport_full) + Number(p.misc_full));
-    workerCounts[p.worker] = (workerCounts[p.worker] || 0) + 1;
-  });
-
-  return {
-    totalJobs: projects.length,
-    uniqueWorkers: Object.keys(workerCounts).length,
-    totalBudget: totalBudget,
-    jobsPerWorker: workerCounts
-  };
-}
-
-function getAllUsers() {
-  const sheet = getSheet('Users');
-  const data = sheet.getDataRange().getValues();
-  const users = [];
-  for (let i = 1; i < data.length; i++) {
-    users.push({ username: data[i][0], role: data[i][2] });
-  }
-  return users;
-}
-
-function addUser(u) {
-  const sheet = getSheet('Users');
-  sheet.appendRow([u.username, u.password, u.role]);
-  return { success: true, message: 'เพิ่มผู้ใช้สำเร็จ' };
-}
-
-function deleteUser(username) {
-  const sheet = getSheet('Users');
-  const data = sheet.getDataRange().getValues();
-  for (let i = 1; i < data.length; i++) {
-    if (data[i][0] == username) {
-      sheet.deleteRow(i + 1);
-      return { success: true, message: 'ลบผู้ใช้สำเร็จ' };
+    workers[p.worker] = (workers[p.worker] || 0) + 1;
+    if (p.networks) { 
+      p.networks.forEach(n => { 
+        totalFull += (Number(n.labor_full) + Number(n.supervise_full) + Number(n.transport_full) + Number(n.misc_full)); 
+      }); 
     }
-  }
-  return { success: false, message: 'ไม่พบผู้ใช้' };
+  });
+  return { 
+    totalJobs: projects.length, 
+    uniqueWorkers: Object.keys(workers).length, 
+    totalBudget: totalFull, 
+    jobsPerWorker: workers 
+  };
 }

@@ -12,7 +12,8 @@ import {
   ClipboardList,
   UserPlus,
   Eye,
-  Settings
+  Settings,
+  Database
 } from 'lucide-react';
 
 interface SidebarProps {
@@ -33,6 +34,7 @@ const Sidebar: React.FC<SidebarProps> = ({ activeView, onNavigate, onLogout, use
   ];
 
   const adminItems = [
+    { id: 'network-types', label: 'จัดการโครงข่าย (Detail)', icon: Database },
     { id: 'users', label: 'จัดการผู้ใช้', icon: Settings },
     { id: 'workers', label: 'เพิ่มจำนวนช่าง', icon: UserPlus },
   ];

@@ -1,79 +1,61 @@
 
-import { Project, CutRecord, User, Worker } from '../types';
+import { Project, CutRecord, User, Worker, Network, NetworkDefinition } from '../types';
 
-// อัปเดต URL เป็นเวอร์ชั่นล่าสุดที่ผู้ใช้แจ้งมา
-const WEB_APP_URL = 'https://script.google.com/macros/s/AKfycbyYtLGbRe-MXBaLXQzlEjepp3aFMAQwOpc0nj8S-KYDGhEGzI02qZ8WgOdAYq5kbwT6/exec';
+/** 
+ * IMPORTANT: หลังแก้โค้ด backend (code.gs) 
+ * ต้องกด Deploy > New Deployment ใน Google Apps Script 
+ * แล้วนำ URL ใหม่มาวางที่นี่ทุกครั้ง
+ */
+const WEB_APP_URL = 'https://script.google.com/macros/s/AKfycbzbPn4K0irgJZvMF8Py0VhPKFcmBvauWGPk--qbtcUk4EbVz4FBYQOopjBAfB6cn-nq/exec';
 
 const gas = (window as any).google?.script?.run;
 
-/**
- * ฟังก์ชันกลางสำหรับเรียกใช้ GAS Backend
- * รองรับทั้งแบบ google.script.run (ถ้าเป็น GAS App) และ fetch (ถ้าเป็น External App)
- */
 const callGas = <T>(functionName: string, ...args: any[]): Promise<T> => {
   return new Promise((resolve, reject) => {
-    // วิธีที่ 1: รันภายใน Google Apps Script Environment
     if (gas && typeof gas[functionName] === 'function') {
       gas
-        .withSuccessHandler((res: T) => resolve(res))
-        .withFailureHandler((err: any) => {
-          const errorMsg = typeof err === 'string' ? err : (err.message || "GAS Connection Error");
-          reject(new Error(errorMsg));
+        .withSuccessHandler((res: any) => {
+          if (res && typeof res === 'object' && 'success' in res && 'data' in res) {
+            if (res.success) resolve(res.data as T);
+            else reject(new Error(res.message || "GAS Function Error"));
+          } else {
+            resolve(res as T);
+          }
         })
+        .withFailureHandler((err: any) => reject(new Error(err.message || "GAS Connection Error")))
         [functionName](...args);
       return;
     }
 
-    // วิธีที่ 2: รันผ่าน Fetch API
-    // เพิ่ม t=timestamp เพื่อป้องกัน Browser Caching ในบางกรณี
     const url = `${WEB_APP_URL}?action=${encodeURIComponent(functionName)}&args=${encodeURIComponent(JSON.stringify(args))}&t=${Date.now()}`;
     
     fetch(url, { 
       method: 'GET',
-      mode: 'cors', // สำคัญ: ต้องใช้ cors เพื่อให้ fetch ติดตาม redirect (302) ไปยัง googleusercontent.com ได้
+      mode: 'cors',
       cache: 'no-cache',
       redirect: 'follow'
     })
-      .then(async response => {
-        if (!response.ok) {
-          throw new Error(`Server Response Error: ${response.status} ${response.statusText}`);
-        }
-        return response.json();
-      })
+      .then(res => res.ok ? res.json() : Promise.reject("Network response was not ok"))
       .then(data => {
-        if (data && data.success === false) {
-          reject(new Error(data.message || "เซิร์ฟเวอร์แจ้งข้อผิดพลาดในการประมวลผล"));
-        } else {
-          resolve(data as T);
-        }
+        if (data && data.success === false) reject(new Error(data.message));
+        else resolve(data.data !== undefined ? data.data : data);
       })
-      .catch(error => {
-        console.error(`Network Error [${functionName}]:`, error);
-        
-        let msg = "ไม่สามารถเชื่อมต่อกับฐานข้อมูลได้";
-        if (error.message.includes('Failed to fetch')) {
-          msg = "การเชื่อมต่อล้มเหลว (Failed to fetch): โปรดตรวจสอบว่าได้เลือก 'Anyone' ในสิทธิ์การเข้าถึง Web App และรหัส Web App ID ถูกต้องแล้ว";
-        } else {
-          msg = error.message || msg;
-        }
-        
-        reject(new Error(msg));
-      });
+      .catch(error => reject(error));
   });
 };
 
-export interface RecordFilter {
-  search?: string;
-  startDate?: string;
-  endDate?: string;
-}
-
 export interface ProjectStats extends Project {
   totalFullBudget: number;
-  totalBudgetPercent: number;
+  totalLimitBudget: number;
   totalSpent: number;
-  remainingBudgetPercent: number;
+  remainingLimit: number;
   percentUsed: number;
+}
+
+export interface RecordFilter {
+  search: string;
+  startDate: string;
+  endDate: string;
 }
 
 export const StorageService = {
@@ -86,44 +68,21 @@ export const StorageService = {
       const data = await callGas<any>('getDashboardData'); 
       return !!data;
     } catch (e) {
-      console.error("Health Check Failed:", e);
       return false;
     }
   },
 
-  async getDiagnostics(): Promise<any> {
-    return await callGas<any>('getDashboardData');
-  },
-
   async authenticate(username: string, pass: string): Promise<User | null> {
-    const response = await callGas<{ success: boolean; username: string; role: string; message: string }>(
-      'authenticateUser',
-      username,
-      pass
-    );
-    if (response && response.success) {
-      return { username: response.username, role: response.role as any };
+    const res = await callGas<any>('authenticateUser', username, pass);
+    if (res && (res.success || res.username)) {
+      return { username: res.username || username, role: res.role || 'user' };
     }
     return null;
   },
 
   async getProjects(): Promise<Project[]> {
-    const rawProjects = await callGas<any[]>('getAllProjects') || [];
-    return rawProjects.map(p => ({
-      wbs: p.wbs,
-      name: p.name,
-      worker: p.worker,
-      labor_full: Number(p.labor_full) || 0,
-      supervise_full: Number(p.supervise_full) || 0,
-      transport_full: Number(p.transport_full) || 0,
-      misc_full: Number(p.misc_full) || 0,
-      labor_balance: Number(p.labor) || 0,
-      supervise_balance: Number(p.supervise) || 0,
-      transport_balance: Number(p.transport) || 0,
-      misc_balance: Number(p.misc) || 0,
-      maxBudgetPercent: Number(p.maxBudgetPercent) || 80,
-      rowIndex: p.rowIndex
-    }));
+    const res = await callGas<Project[]>('getAllProjects');
+    return res || [];
   },
 
   async getProjectsWithStats(): Promise<ProjectStats[]> {
@@ -132,79 +91,75 @@ export const StorageService = {
     
     return projects.map(p => {
       const pRecords = records.filter(r => this.normalizeWBS(r.wbs) === this.normalizeWBS(p.wbs));
-      const totalFullBudget = p.labor_full + p.supervise_full + p.transport_full + p.misc_full;
-      const totalBudgetPercent = totalFullBudget * (p.maxBudgetPercent / 100);
-      const totalSpent = pRecords.reduce((acc, r) => acc + r.labor_cut + r.supervise_cut + r.transport_cut + r.misc_cut, 0);
-      const remainingBudgetPercent = Math.max(0, totalBudgetPercent - totalSpent);
-      const percentUsed = totalBudgetPercent > 0 ? (totalSpent / totalBudgetPercent) * 100 : 0;
+      const networks = p.networks || [];
+      
+      let totalFullBudget = 0;
+      networks.forEach(n => {
+        totalFullBudget += (Number(n.labor_full || 0) + Number(n.supervise_full || 0) + Number(n.transport_full || 0) + Number(n.misc_full || 0));
+      });
+      
+      const totalLimitBudget = totalFullBudget * (p.maxBudgetPercent / 100);
+      const totalSpent = pRecords.reduce((acc, r) => acc + (r.labor_cut || 0) + (r.supervise_cut || 0) + (r.transport_cut || 0) + (r.misc_cut || 0), 0);
+      const remainingLimit = Math.max(0, totalLimitBudget - totalSpent);
+      const percentUsed = totalLimitBudget > 0 ? (totalSpent / totalLimitBudget) * 100 : 0;
 
       return {
         ...p,
+        networks,
         totalFullBudget,
-        totalBudgetPercent,
+        totalLimitBudget,
         totalSpent,
-        remainingBudgetPercent,
+        remainingLimit,
         percentUsed
       };
     });
   },
 
   async saveProject(p: Project): Promise<void> {
-    const data = {
-      wbs: this.normalizeWBS(p.wbs),
-      name: p.name,
-      worker: p.worker,
-      labor_current: Number(p.labor_balance),
-      supervise_current: Number(p.supervise_balance),
-      transport_current: Number(p.transport_balance),
-      misc_current: Number(p.misc_balance),
-      labor_full: Number(p.labor_full),
-      supervise_full: Number(p.supervise_full),
-      transport_full: Number(p.transport_full),
-      misc_full: Number(p.misc_full),
-      maxBudgetPercent: Number(p.maxBudgetPercent),
-      rowIndex: (p as any).rowIndex
-    };
-    
-    const response = await callGas<any>(data.rowIndex ? 'updateProject' : 'addProject', data);
-    if (response && response.success === false) {
-      throw new Error(response.message || 'ไม่สามารถบันทึกโครงการได้');
-    }
+    await callGas<any>('saveProject', p);
   },
 
   async deleteProject(wbs: string): Promise<void> {
-    const response = await callGas<any>('deleteProject', this.normalizeWBS(wbs));
-    if (response && response.success === false) {
-      throw new Error(response.message || 'ไม่สามารถลบโครงการได้');
-    }
+    await callGas('deleteProject', this.normalizeWBS(wbs));
   },
 
   async getRecords(filter?: RecordFilter): Promise<CutRecord[]> {
-    const allRaw = await callGas<any[]>('getAllCutRecords') || [];
-    const all: CutRecord[] = allRaw.map(r => ({
-      id: String(r.id),
-      timestamp: String(r.date),
-      wbs: this.normalizeWBS(r.wbs),
-      projectName: r.projectName || 'N/A',
-      worker: r.worker || 'N/A',
-      detail: r.detail || '',
+    const raw = await callGas<any[]>('getAllCutRecords') || [];
+    let records: CutRecord[] = raw.map(r => ({
+      id: r.id,
+      timestamp: r.date,
+      wbs: r.wbs,
+      networkCode: r.networkCode,
+      projectName: r.projectName,
+      worker: r.worker,
+      detail: r.detail,
       labor_cut: Number(r.labor) || 0,
       supervise_cut: Number(r.supervise) || 0,
       transport_cut: Number(r.transport) || 0,
       misc_cut: Number(r.misc) || 0
     }));
 
-    if (!filter) return all;
-    let filtered = all;
-    if (filter.search) {
-      const s = filter.search.toLowerCase();
-      filtered = filtered.filter(r => 
-        r.wbs.toLowerCase().includes(s) || 
-        r.detail.toLowerCase().includes(s) ||
-        r.projectName.toLowerCase().includes(s)
-      );
+    if (filter) {
+      if (filter.search) {
+        const s = filter.search.toLowerCase();
+        records = records.filter(r => 
+          r.wbs.toLowerCase().includes(s) || 
+          r.projectName.toLowerCase().includes(s) || 
+          r.worker.toLowerCase().includes(s) || 
+          r.detail.toLowerCase().includes(s)
+        );
+      }
+      if (filter.startDate) {
+        records = records.filter(r => new Date(r.timestamp) >= new Date(filter.startDate));
+      }
+      if (filter.endDate) {
+        const end = new Date(filter.endDate);
+        end.setHours(23, 59, 59, 999);
+        records = records.filter(r => new Date(r.timestamp) <= end);
+      }
     }
-    return filtered;
+
+    return records;
   },
 
   async getRecordsByWBS(wbs: string): Promise<CutRecord[]> {
@@ -213,57 +168,73 @@ export const StorageService = {
   },
 
   async addRecord(r: CutRecord): Promise<void> {
-    const cutData = {
-      wbs: this.normalizeWBS(r.wbs),
+    await callGas<any>('addCutRecord', {
+      wbs: r.wbs,
+      networkCode: r.networkCode,
       detail: r.detail,
-      labor: Number(r.labor_cut),
-      supervise: Number(r.supervise_cut),
-      transport: Number(r.transport_cut),
-      misc: Number(r.misc_cut)
-    };
-    const response = await callGas<any>('addCutRecord', cutData);
-    if (response && response.success === false) {
-      throw new Error(response.message || 'ไม่สามารถบันทึกการตัดงบได้ (อาจเกินวงเงินที่กำหนด)');
-    }
+      labor: r.labor_cut,
+      supervise: r.supervise_cut,
+      transport: r.transport_cut,
+      misc: r.misc_cut
+    });
+  },
+
+  async updateRecord(id: string, r: CutRecord): Promise<void> {
+    await callGas<any>('updateCutRecord', id, {
+      wbs: r.wbs,
+      networkCode: r.networkCode,
+      detail: r.detail,
+      labor: r.labor_cut,
+      supervise: r.supervise_cut,
+      transport: r.transport_cut,
+      misc: r.misc_cut
+    });
   },
 
   async deleteRecord(id: string): Promise<void> {
-    const response = await callGas<any>('deleteRecord', id);
-    if (response && response.success === false) {
-      throw new Error(response.message || 'ไม่สามารถลบรายการได้');
-    }
+    await callGas('deleteRecord', id);
   },
 
   async getWorkers(): Promise<Worker[]> {
-    const projects = await this.getProjects();
-    const uniqueNames = Array.from(new Set(projects.map(p => p.worker)));
-    return uniqueNames.map((name, i) => ({ 
-      id: String(i), 
-      name: name as string, 
-      position: 'วิศวกร/ช่างเทคนิคประจำโครงการ' 
-    }));
+    const res = await callGas<Worker[]>('getAllWorkers');
+    return res || [];
   },
 
   async addWorker(worker: Worker): Promise<void> {
-    console.info("Add worker logic implemented via Project Registration.");
+    await callGas('saveWorker', worker);
+  },
+
+  async deleteWorker(id: string): Promise<void> {
+    await callGas('deleteWorker', id);
   },
 
   async getUsers(): Promise<User[]> {
-    const users = await callGas<User[]>('getAllUsers');
-    return users || [];
+    const res = await callGas<User[]>('getAllUsers');
+    return res || [];
   },
   
   async addUser(u: User): Promise<void> {
-    const response = await callGas<any>('addUser', u);
-    if (response && response.success === false) {
-      throw new Error(response.message || 'ไม่สามารถเพิ่มผู้ใช้ได้');
-    }
+    await callGas('addUser', u);
   },
 
   async deleteUser(username: string): Promise<void> {
-    const response = await callGas<any>('deleteUser', username);
-    if (response && response.success === false) {
-      throw new Error(response.message || 'ไม่สามารถลบผู้ใช้ได้');
-    }
+    await callGas('deleteUser', username);
+  },
+
+  async getDiagnostics(): Promise<any> {
+    return await callGas<any>('getDashboardData');
+  },
+
+  async getNetworkDefinitions(): Promise<NetworkDefinition[]> {
+    const res = await callGas<NetworkDefinition[]>('getNetworkDefinitions');
+    return res || [];
+  },
+
+  async saveNetworkDefinition(def: NetworkDefinition): Promise<void> {
+    await callGas<any>('saveNetworkDefinition', def);
+  },
+
+  async deleteNetworkDefinition(code: string): Promise<void> {
+    await callGas<any>('deleteNetworkDefinition', code);
   }
 };

@@ -13,9 +13,10 @@ import History from './components/History';
 import UsersManagement from './components/UsersManagement';
 import WorkerManagement from './components/WorkerManagement';
 import ProjectOverview from './components/ProjectOverview';
+import NetworkManagement from './components/NetworkManagement';
 import { Database, Wifi, ShieldCheck, Loader2, CheckCircle2, AlertTriangle } from 'lucide-react';
 
-export type View = 'dashboard' | 'overview' | 'job-details' | 'add-project' | 'edit-project' | 'cut-budget' | 'history' | 'users' | 'workers';
+export type View = 'dashboard' | 'overview' | 'job-details' | 'add-project' | 'edit-project' | 'cut-budget' | 'history' | 'users' | 'workers' | 'network-types';
 
 const App: React.FC = () => {
   const [user, setUser] = useState<User | null>(null);
@@ -171,6 +172,7 @@ const App: React.FC = () => {
           {currentView === 'history' && <History />}
           {currentView === 'users' && <UsersManagement />}
           {currentView === 'workers' && <WorkerManagement />}
+          {currentView === 'network-types' && <NetworkManagement />}
         </div>
       </main>
 

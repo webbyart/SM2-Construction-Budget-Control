@@ -36,6 +36,16 @@ const History: React.FC = () => {
 
   const totalSum = records.reduce((acc, r) => acc + r.labor_cut + r.supervise_cut + r.transport_cut + r.misc_cut, 0);
 
+  const formatDate = (dateStr: string) => {
+    try {
+      const date = new Date(dateStr);
+      if (isNaN(date.getTime())) return "N/A";
+      return date.toLocaleString('th-TH');
+    } catch (e) {
+      return "N/A";
+    }
+  };
+
   return (
     <div className="space-y-6 animate-in fade-in duration-700">
       <div className="bg-white rounded-[40px] shadow-sm border border-slate-100 overflow-hidden">
@@ -130,7 +140,7 @@ const History: React.FC = () => {
                 return (
                   <tr key={i} className="hover:bg-slate-50 transition-colors">
                     <td className="px-8 py-6 text-sm text-slate-500 font-medium whitespace-nowrap">
-                      {new Date(r.timestamp).toLocaleString('th-TH')}
+                      {formatDate(r.timestamp)}
                     </td>
                     <td className="px-8 py-6">
                       <div className="font-black text-slate-900 text-sm tracking-tight">{r.projectName}</div>

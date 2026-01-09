@@ -33,7 +33,9 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigate }) => {
         const workerCounts: Record<string, number> = {};
 
         projects.forEach(p => {
-          const pTotal = p.labor_full + p.supervise_full + p.transport_full + p.misc_full;
+          // Calculate project total from all its networks
+          const networks = p.networks || [];
+          const pTotal = networks.reduce((sum, n) => sum + Number(n.labor_full || 0) + Number(n.supervise_full || 0) + Number(n.transport_full || 0) + Number(n.misc_full || 0), 0);
           totalBudget100 += pTotal;
           totalBudgetLimit += pTotal * (p.maxBudgetPercent / 100);
           workerCounts[p.worker] = (workerCounts[p.worker] || 0) + 1;
