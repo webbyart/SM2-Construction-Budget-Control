@@ -38,7 +38,7 @@ const ProjectForm: React.FC<ProjectFormProps> = ({ project, onSave }) => {
           if (!isNaN(date.getTime())) {
             setApprovalDate(date.toISOString().split('T')[0]);
           } else {
-            setApprovalDate(project.approvalDate); // Fallback to raw string if possible
+            setApprovalDate('');
           }
         } catch (e) {
           setApprovalDate('');
@@ -83,13 +83,7 @@ const ProjectForm: React.FC<ProjectFormProps> = ({ project, onSave }) => {
     const updated = [...networks];
     const net = { ...updated[index] };
     
-    if (field === 'networkCode') {
-      const code = value.toString().toUpperCase().trim();
-      net.networkCode = code;
-      // If code changed, check if it matches a master name
-      const matched = networkDefs.find(d => d.code === code);
-      if (matched) net.networkName = matched.name;
-    } else if (typeof value === 'number' || (typeof value === 'string' && field.endsWith('_full'))) {
+    if (typeof value === 'number' || (typeof value === 'string' && field.endsWith('_full'))) {
       const num = parseFloat(value.toString()) || 0;
       (net as any)[field] = num;
       
@@ -106,13 +100,15 @@ const ProjectForm: React.FC<ProjectFormProps> = ({ project, onSave }) => {
     setNetworks(updated);
   };
 
-  const onSelectNetworkFromDropdown = (index: number, code: string) => {
+  // Logic: User selects name from dropdown. Code remains manual.
+  const onSelectNetworkFromDropdown = (index: number, name: string) => {
     const updated = [...networks];
-    const def = networkDefs.find(d => d.code === code);
+    const def = networkDefs.find(d => d.name === name);
     updated[index] = { 
       ...updated[index], 
-      networkCode: code, 
-      networkName: def ? def.name : updated[index].networkName 
+      networkName: name,
+      // If found in master data, we can suggest the code, but user can still change it
+      networkCode: def ? def.code : updated[index].networkCode
     };
     setNetworks(updated);
   };
@@ -137,10 +133,10 @@ const ProjectForm: React.FC<ProjectFormProps> = ({ project, onSave }) => {
           ...n,
           networkCode: n.networkCode.trim(),
           networkName: n.networkName || '',
-          labor_balance: n.labor_balance !== undefined ? n.labor_balance : n.labor_full,
-          supervise_balance: n.supervise_balance !== undefined ? n.supervise_balance : n.supervise_full,
-          transport_balance: n.transport_balance !== undefined ? n.transport_balance : n.transport_full,
-          misc_balance: n.misc_balance !== undefined ? n.misc_balance : n.misc_full
+          labor_balance: n.labor_balance !== undefined && project ? n.labor_balance : n.labor_full,
+          supervise_balance: n.supervise_balance !== undefined && project ? n.supervise_balance : n.supervise_full,
+          transport_balance: n.transport_balance !== undefined && project ? n.transport_balance : n.transport_full,
+          misc_balance: n.misc_balance !== undefined && project ? n.misc_balance : n.misc_full
         }))
       };
       await StorageService.saveProject(payload);
@@ -289,7 +285,7 @@ const ProjectForm: React.FC<ProjectFormProps> = ({ project, onSave }) => {
                 <thead className="bg-slate-50 text-[9px] font-black uppercase tracking-widest text-slate-400">
                   <tr>
                     <th className="px-6 py-4 w-96">ชื่องานโครงข่าย (Select)</th>
-                    <th className="px-6 py-4 w-40">เลขที่โครงข่าย</th>
+                    <th className="px-6 py-4 w-48">เลขที่โครงข่าย (Code)</th>
                     <th className="px-6 py-4">ค่าแรง (100%)</th>
                     <th className="px-6 py-4">คุมงาน (100%)</th>
                     <th className="px-6 py-4">ขนส่ง (100%)</th>
@@ -299,23 +295,18 @@ const ProjectForm: React.FC<ProjectFormProps> = ({ project, onSave }) => {
                 </thead>
                 <tbody className="divide-y divide-slate-50">
                   {networks.map((net, idx) => {
-                    const matchedDef = networkDefs.find(d => d.code === net.networkCode);
-                    
                     return (
                       <tr key={idx} className="hover:bg-slate-50/50">
                         <td className="px-4 py-3">
                           <div className="relative">
                             <select 
                               className="w-full px-4 py-3 bg-white border border-slate-200 rounded-xl font-bold text-xs appearance-none focus:ring-2 focus:ring-purple-500 outline-none pr-8 truncate"
-                              value={matchedDef ? net.networkCode : ""}
+                              value={net.networkName || ""}
                               onChange={e => onSelectNetworkFromDropdown(idx, e.target.value)}
                             >
-                              {!matchedDef && net.networkName && (
-                                <option value={net.networkCode}>{net.networkName}</option>
-                              )}
                               <option value="">-- เลือกชื่องานจากฐานข้อมูล --</option>
                               {networkDefs.map(def => (
-                                <option key={def.code} value={def.code}>
+                                <option key={def.code} value={def.name}>
                                   {def.name}
                                 </option>
                               ))}
@@ -328,10 +319,10 @@ const ProjectForm: React.FC<ProjectFormProps> = ({ project, onSave }) => {
                             <Hash className="absolute left-3 top-1/2 -translate-y-1/2 w-3 h-3 text-slate-300" />
                             <input 
                               type="text"
-                              className="w-full pl-8 pr-3 py-2 bg-white border border-slate-200 rounded-xl font-mono text-xs font-black text-purple-700 focus:ring-2 focus:ring-purple-500 outline-none"
-                              placeholder="รหัสโครงข่าย"
+                              className="w-full pl-8 pr-3 py-3 bg-white border border-slate-200 rounded-xl font-mono text-xs font-black text-purple-700 focus:ring-2 focus:ring-purple-500 outline-none"
+                              placeholder="กรอกเลขที่"
                               value={net.networkCode}
-                              onChange={e => handleNetworkChange(idx, 'networkCode', e.target.value)}
+                              onChange={e => handleNetworkChange(idx, 'networkCode', e.target.value.toUpperCase())}
                             />
                           </div>
                         </td>
@@ -339,7 +330,7 @@ const ProjectForm: React.FC<ProjectFormProps> = ({ project, onSave }) => {
                           <td key={field} className="px-4 py-3">
                             <input 
                               type="number"
-                              className="w-full px-3 py-2 bg-white border border-slate-200 rounded-xl font-mono text-xs font-bold text-slate-700 focus:ring-2 focus:ring-purple-500 outline-none"
+                              className="w-full px-3 py-3 bg-white border border-slate-200 rounded-xl font-mono text-xs font-bold text-slate-700 focus:ring-2 focus:ring-purple-500 outline-none"
                               placeholder="0.00"
                               value={(net as any)[field] || ''}
                               onChange={e => handleNetworkChange(idx, field as keyof Network, e.target.value)}
