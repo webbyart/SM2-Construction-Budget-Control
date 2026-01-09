@@ -67,11 +67,25 @@ const BudgetCut: React.FC<BudgetCutProps> = ({ project, onBack }) => {
     return { totalProjectFull, globalLimit, totalSpent, remainingGlobalLimit };
   }, [project, records]);
 
-  // คำนวณยอด 80% (หรือตาม MaxPercent) ของหมวดที่เลือกในโครงข่ายที่เลือก
-  const currentCategoryLimit = useMemo(() => {
+  // คำนวณยอดคงเหลือตามเพดานงบ (Remaining within Limit)
+  const getCategoryRemainingLimit = (cat: BudgetCategory) => {
     if (!selectedNetwork) return 0;
-    const fullVal = (selectedNetwork as any)[`${category}_full`] || 0;
-    return fullVal * (project.maxBudgetPercent / 100);
+    
+    // 1. หาเพดานงบของหมวดนี้ (Full * Percent)
+    const fullVal = (selectedNetwork as any)[`${cat}_full`] || 0;
+    const limitVal = fullVal * (project.maxBudgetPercent / 100);
+    
+    // 2. หายอดที่เบิกไปแล้วในหมวดนี้สำหรับโครงข่ายนี้
+    // สูตร: ยอดที่เบิกแล้ว = งบเต็ม 100% - ยอดคงเหลือ 100% (จากฐานข้อมูล)
+    const balance100 = (selectedNetwork as any)[`${cat}_balance`] || 0;
+    const spent = fullVal - balance100;
+    
+    // 3. ยอดคงเหลือที่ตัดได้ = เพดาน - ยอดที่เบิกแล้ว
+    return Math.max(0, limitVal - spent);
+  };
+
+  const currentCategoryLimitDisplay = useMemo(() => {
+    return getCategoryRemainingLimit(category);
   }, [selectedNetwork, category, project.maxBudgetPercent]);
 
   const handleAddOrUpdateCut = async () => {
@@ -80,7 +94,6 @@ const BudgetCut: React.FC<BudgetCutProps> = ({ project, onBack }) => {
       return;
     }
 
-    // ในกรณีแก้ไข ต้องหักยอดเก่าออกก่อนตรวจสอบ limit (logic นี้ฝั่ง server จัดการแต่ฝั่ง client แจ้งเตือนคร่าวๆ)
     let checkAmount = amount;
     if (editingRecordId) {
       const oldRec = records.find(r => r.id === editingRecordId);
@@ -134,7 +147,6 @@ const BudgetCut: React.FC<BudgetCutProps> = ({ project, onBack }) => {
     setDetail(r.detail);
     setSelectedNetworkCode(r.networkCode);
     
-    // หาหมวดที่มีค่า
     if (r.labor_cut > 0) { setCategory('labor'); setAmount(r.labor_cut); }
     else if (r.supervise_cut > 0) { setCategory('supervise'); setAmount(r.supervise_cut); }
     else if (r.transport_cut > 0) { setCategory('transport'); setAmount(r.transport_cut); }
@@ -197,7 +209,6 @@ const BudgetCut: React.FC<BudgetCutProps> = ({ project, onBack }) => {
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         <div className="lg:col-span-2 space-y-6">
-          {/* Shared Pool Card */}
           <div className="bg-white p-8 rounded-[32px] shadow-sm border border-slate-100 flex flex-col md:flex-row gap-6">
              <div className="flex-1">
                 <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Total Project Pool Usage ({project.maxBudgetPercent}%)</p>
@@ -213,7 +224,6 @@ const BudgetCut: React.FC<BudgetCutProps> = ({ project, onBack }) => {
              </div>
           </div>
 
-          {/* Form */}
           <div className={`bg-white p-8 rounded-[32px] shadow-sm border-2 transition-all ${editingRecordId ? 'border-amber-400 ring-4 ring-amber-400/10' : 'border-slate-100'} space-y-6 relative`}>
              {editingRecordId && (
                <div className="absolute top-4 right-8 flex items-center gap-2">
@@ -244,10 +254,10 @@ const BudgetCut: React.FC<BudgetCutProps> = ({ project, onBack }) => {
                      value={category}
                      onChange={e => setCategory(e.target.value as BudgetCategory)}
                    >
-                     <option value="labor">ค่าแรง (คงเหลือ: {(selectedNetwork?.labor_balance || 0).toLocaleString()})</option>
-                     <option value="supervise">ควบคุมงาน (คงเหลือ: {(selectedNetwork?.supervise_balance || 0).toLocaleString()})</option>
-                     <option value="transport">ขนส่ง (คงเหลือ: {(selectedNetwork?.transport_balance || 0).toLocaleString()})</option>
-                     <option value="misc">เบ็ดเตล็ด (คงเหลือ: {(selectedNetwork?.misc_balance || 0).toLocaleString()})</option>
+                     <option value="labor">ค่าแรง (คงเหลือตาม {project.maxBudgetPercent}%: {getCategoryRemainingLimit('labor').toLocaleString()})</option>
+                     <option value="supervise">ควบคุมงาน (คงเหลือตาม {project.maxBudgetPercent}%: {getCategoryRemainingLimit('supervise').toLocaleString()})</option>
+                     <option value="transport">ขนส่ง (คงเหลือตาม {project.maxBudgetPercent}%: {getCategoryRemainingLimit('transport').toLocaleString()})</option>
+                     <option value="misc">เบ็ดเตล็ด (คงเหลือตาม {project.maxBudgetPercent}%: {getCategoryRemainingLimit('misc').toLocaleString()})</option>
                    </select>
                 </div>
                 <div className="space-y-2">
@@ -263,7 +273,7 @@ const BudgetCut: React.FC<BudgetCutProps> = ({ project, onBack }) => {
                 <div className="space-y-2">
                    <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest flex justify-between">
                      <span>จำนวนเงิน (฿)</span>
-                     <span className="text-purple-600">เพดาน {project.maxBudgetPercent}%: {currentCategoryLimit.toLocaleString()} ฿</span>
+                     <span className="text-purple-600">เพดาน {project.maxBudgetPercent}% ของหมวด: {currentCategoryLimitDisplay.toLocaleString()} ฿</span>
                    </label>
                    <input 
                      type="number" 
@@ -292,7 +302,6 @@ const BudgetCut: React.FC<BudgetCutProps> = ({ project, onBack }) => {
              </button>
           </div>
 
-          {/* Table */}
           <div className="bg-white rounded-[32px] shadow-sm border border-slate-100 overflow-hidden">
              <div className="p-6 border-b border-slate-50 font-black uppercase text-xs tracking-widest text-slate-400">ประวัติการตัดงบเฉพาะโครงการนี้</div>
              <div className="overflow-x-auto">
@@ -332,7 +341,6 @@ const BudgetCut: React.FC<BudgetCutProps> = ({ project, onBack }) => {
           </div>
         </div>
 
-        {/* Side Panel */}
         <div className="space-y-6">
            <div className="bg-white p-8 rounded-[32px] shadow-sm border border-slate-100">
               <h4 className="text-[10px] font-black uppercase tracking-widest text-slate-400 mb-4">สถานะรายโครงข่าย (Balance)</h4>
@@ -340,15 +348,23 @@ const BudgetCut: React.FC<BudgetCutProps> = ({ project, onBack }) => {
                  {(project.networks || []).map(n => {
                    const nFull = (n.labor_full || 0) + (n.supervise_full || 0) + (n.transport_full || 0) + (n.misc_full || 0);
                    const nBal = (n.labor_balance || 0) + (n.supervise_balance || 0) + (n.transport_balance || 0) + (n.misc_balance || 0);
-                   const perc = nFull > 0 ? (nBal / nFull) * 100 : 0;
+                   const spent = nFull - nBal;
+                   const nLimit = nFull * (project.maxBudgetPercent / 100);
+                   const nRemainingLimit = Math.max(0, nLimit - spent);
+                   
+                   const perc = nLimit > 0 ? (nRemainingLimit / nLimit) * 100 : 0;
                    return (
                      <div key={n.networkCode} className="space-y-2">
                         <div className="flex justify-between text-[10px] font-black uppercase">
                            <span>{n.networkCode}</span>
-                           <span className={perc < 20 ? 'text-rose-500' : 'text-slate-400'}>{perc.toFixed(0)}% Left</span>
+                           <span className={perc < 20 ? 'text-rose-500' : 'text-slate-400'}>{perc.toFixed(0)}% Limit Left</span>
                         </div>
                         <div className="w-full h-2 bg-slate-50 rounded-full overflow-hidden border border-slate-100">
                            <div className={`h-full ${perc < 20 ? 'bg-rose-500' : 'bg-emerald-500'}`} style={{ width: `${perc}%` }}></div>
+                        </div>
+                        <div className="text-[9px] font-bold text-slate-400 flex justify-between">
+                           <span>Remaining Limit:</span>
+                           <span>{nRemainingLimit.toLocaleString()} ฿</span>
                         </div>
                      </div>
                    );
