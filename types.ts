@@ -31,6 +31,8 @@ export interface Project {
   name: string;
   worker: string;
   maxBudgetPercent: number;
+  approvalNumber?: string;
+  approvalDate?: string;
   networks: Network[];
 }
 

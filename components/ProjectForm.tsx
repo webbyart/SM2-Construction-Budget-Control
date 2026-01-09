@@ -2,7 +2,7 @@
 import React, { useState, useEffect } from 'react';
 import { Project, Network, NetworkDefinition, Worker } from '../types';
 import { StorageService } from '../services/storage';
-import { Save, Plus, Trash2, Loader2, Briefcase, User as UserIcon, Percent, Database, ChevronDown, AlertCircle, RefreshCw, PenTool } from 'lucide-react';
+import { Save, Plus, Trash2, Loader2, Briefcase, User as UserIcon, Percent, Database, ChevronDown, AlertCircle, RefreshCw, PenTool, FileText, Calendar } from 'lucide-react';
 
 interface ProjectFormProps {
   project?: Project;
@@ -15,6 +15,8 @@ const ProjectForm: React.FC<ProjectFormProps> = ({ project, onSave }) => {
   const [name, setName] = useState('');
   const [worker, setWorker] = useState('');
   const [maxBudgetPercent, setMaxBudgetPercent] = useState(80);
+  const [approvalNumber, setApprovalNumber] = useState('');
+  const [approvalDate, setApprovalDate] = useState('');
   const [networks, setNetworks] = useState<Network[]>([]);
   const [networkDefs, setNetworkDefs] = useState<NetworkDefinition[]>([]);
   const [isDataLoaded, setIsDataLoaded] = useState(false);
@@ -27,6 +29,8 @@ const ProjectForm: React.FC<ProjectFormProps> = ({ project, onSave }) => {
       setName(project.name);
       setWorker(project.worker);
       setMaxBudgetPercent(project.maxBudgetPercent);
+      setApprovalNumber(project.approvalNumber || '');
+      setApprovalDate(project.approvalDate || '');
       setNetworks(project.networks || []);
     } else {
       addNetwork();
@@ -90,7 +94,12 @@ const ProjectForm: React.FC<ProjectFormProps> = ({ project, onSave }) => {
     setIsLoading(true);
     try {
       const payload: Project = {
-        wbs: wbs.trim().toUpperCase(), name: name.trim(), worker: worker.trim(), maxBudgetPercent,
+        wbs: wbs.trim().toUpperCase(), 
+        name: name.trim(), 
+        worker: worker.trim(), 
+        maxBudgetPercent,
+        approvalNumber: approvalNumber.trim(),
+        approvalDate,
         networks: networks.map(n => ({ ...n }))
       };
       await StorageService.saveProject(payload);
@@ -181,6 +190,41 @@ const ProjectForm: React.FC<ProjectFormProps> = ({ project, onSave }) => {
                 />
               </div>
             </div>
+          </div>
+
+          {/* Approval Info */}
+          <div className="bg-slate-50/50 p-8 rounded-[32px] border border-slate-100 space-y-4">
+             <h3 className="text-sm font-black text-slate-800 uppercase tracking-widest flex items-center gap-2">
+               <FileText className="w-4 h-4 text-purple-600" />
+               ข้อมูลการอนุมัติ (Approval Info)
+             </h3>
+             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <div className="space-y-2">
+                  <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-4">เลขที่อนุมัติ</label>
+                  <div className="relative">
+                    <FileText className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-300" />
+                    <input
+                      type="text"
+                      className="w-full pl-11 pr-4 py-3 bg-white border border-slate-100 rounded-2xl font-bold focus:ring-4 focus:ring-purple-500/10 focus:border-purple-500 outline-none transition-all"
+                      value={approvalNumber}
+                      onChange={e => setApprovalNumber(e.target.value)}
+                      placeholder="ระบุเลขที่อนุมัติ"
+                    />
+                  </div>
+                </div>
+                <div className="space-y-2">
+                  <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-4">วันที่อนุมัติ</label>
+                  <div className="relative">
+                    <Calendar className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-300" />
+                    <input
+                      type="date"
+                      className="w-full pl-11 pr-4 py-3 bg-white border border-slate-100 rounded-2xl font-bold focus:ring-4 focus:ring-purple-500/10 focus:border-purple-500 outline-none transition-all"
+                      value={approvalDate}
+                      onChange={e => setApprovalDate(e.target.value)}
+                    />
+                  </div>
+                </div>
+             </div>
           </div>
 
           {/* Networks Table */}

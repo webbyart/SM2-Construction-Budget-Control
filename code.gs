@@ -63,7 +63,7 @@ function getSheet(name) {
   if (!sheet) {
     sheet = ss.insertSheet(name);
     if (name === 'Projects') {
-      sheet.appendRow(['wbs', 'name', 'worker', 'networkCode', 'labor_current', 'supervise_current', 'transport_current', 'misc_current', 'labor_full', 'supervise_full', 'transport_full', 'misc_full', 'maxBudgetPercent']);
+      sheet.appendRow(['wbs', 'name', 'worker', 'networkCode', 'labor_current', 'supervise_current', 'transport_current', 'misc_current', 'labor_full', 'supervise_full', 'transport_full', 'misc_full', 'maxBudgetPercent', 'approvalNumber', 'approvalDate']);
     } else if (name === 'Records') {
       sheet.appendRow(['WBS', 'networkCode', 'วันที่', 'รายละเอียด', 'ค่าแรง', 'ควบคุมงาน', 'ขนส่ง', 'เบ็ดเตล็ด', 'RecordID']);
     } else if (name === 'Users') {
@@ -191,13 +191,21 @@ function getAllProjects() {
   const sheet = getSheet('Projects');
   const lastRow = sheet.getLastRow();
   if (lastRow < 2) return [];
-  const data = sheet.getRange(2, 1, lastRow - 1, 13).getValues();
+  const data = sheet.getRange(2, 1, lastRow - 1, 15).getValues();
   const projectsMap = {};
   for (let i = 0; i < data.length; i++) {
     const wbs = data[i][0];
     if (!wbs) continue;
     if (!projectsMap[wbs]) {
-      projectsMap[wbs] = { wbs: wbs, name: data[i][1], worker: data[i][2], maxBudgetPercent: data[i][12], networks: [] };
+      projectsMap[wbs] = { 
+        wbs: wbs, 
+        name: data[i][1], 
+        worker: data[i][2], 
+        maxBudgetPercent: data[i][12], 
+        approvalNumber: data[i][13],
+        approvalDate: data[i][14],
+        networks: [] 
+      };
     }
     projectsMap[wbs].networks.push({
       networkCode: data[i][3] ? data[i][3].toString() : '',
@@ -222,7 +230,12 @@ function saveProject(p) {
   }
   if (p.networks && p.networks.length > 0) {
     p.networks.forEach(n => {
-      sheet.appendRow([p.wbs, p.name, p.worker, n.networkCode, n.labor_balance, n.supervise_balance, n.transport_balance, n.misc_balance, n.labor_full, n.supervise_full, n.transport_full, n.misc_full, p.maxBudgetPercent]);
+      sheet.appendRow([
+        p.wbs, p.name, p.worker, n.networkCode, 
+        n.labor_balance, n.supervise_balance, n.transport_balance, n.misc_balance, 
+        n.labor_full, n.supervise_full, n.transport_full, n.misc_full, 
+        p.maxBudgetPercent, p.approvalNumber, p.approvalDate
+      ]);
     });
   }
   return { success: true };
