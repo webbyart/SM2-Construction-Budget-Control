@@ -276,33 +276,41 @@ function addCutRecord(r) {
     const pSheet = getSheet('Projects');
     const pData = pSheet.getDataRange().getValues();
     let targetRow = -1;
-    let globalPoolFull = 0;
+    let networkPoolFull = 0;
     let maxPercent = 0;
 
+    // หาแถวเป้าหมายและคำนวณงบเต็ม "เฉพาะโครงข่ายที่เลือก"
     for (let i = 1; i < pData.length; i++) {
       if (pData[i][0].toString().trim().toUpperCase() === r.wbs.toString().trim().toUpperCase()) {
-        globalPoolFull += (Number(pData[i][9]) + Number(pData[i][10]) + Number(pData[i][11]) + Number(pData[i][12]));
         maxPercent = Number(pData[i][13]);
         if (pData[i][3].toString() === r.networkCode.toString()) {
           targetRow = i + 1;
+          networkPoolFull = (Number(pData[i][9]) + Number(pData[i][10]) + Number(pData[i][11]) + Number(pData[i][12]));
         }
       }
     }
 
     if (targetRow === -1) throw new Error("ไม่พบรหัสโครงข่าย " + r.networkCode);
-    const globalLimit = globalPoolFull * (maxPercent / 100);
+    
+    // เพดานงบ "รายโครงข่าย"
+    const networkLimit = networkPoolFull * (maxPercent / 100);
+    
+    // คำนวณยอดที่ตัดไปแล้ว "เฉพาะโครงข่ายที่เลือก"
     const recSheet = getSheet('Records');
     const recData = recSheet.getDataRange().getValues();
-    let sumCuts = 0;
+    let sumCutsInNetwork = 0;
     for (let i = 1; i < recData.length; i++) {
-      if (recData[i][0].toString().trim().toUpperCase() === r.wbs.toString().trim().toUpperCase()) {
-        sumCuts += (Number(recData[i][4]) + Number(recData[i][5]) + Number(recData[i][6]) + Number(recData[i][7]));
+      if (recData[i][0].toString().trim().toUpperCase() === r.wbs.toString().trim().toUpperCase() && 
+          recData[i][1].toString() === r.networkCode.toString()) {
+        sumCutsInNetwork += (Number(recData[i][4]) + Number(recData[i][5]) + Number(recData[i][6]) + Number(recData[i][7]));
       }
     }
 
     const newCutTotal = Number(r.labor) + Number(r.supervise) + Number(r.transport) + Number(r.misc);
-    if (sumCuts + newCutTotal > globalLimit + 0.1) {
-      throw new Error("ยอดตัดรวมเกินเพดานงบโครงการ " + maxPercent + "%");
+    
+    // ตรวจสอบห้ามเกินเพดานรายโครงข่าย
+    if (sumCutsInNetwork + newCutTotal > networkLimit + 0.1) {
+      throw new Error("ยอดตัดรวมของโครงข่าย " + r.networkCode + " เกินเพดาน " + maxPercent + "% (ตัดได้สูงสุดรวม: " + networkLimit.toFixed(2) + ")");
     }
 
     const currentValues = pSheet.getRange(targetRow, 6, 1, 4).getValues()[0];

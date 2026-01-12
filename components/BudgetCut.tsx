@@ -53,40 +53,41 @@ const BudgetCut: React.FC<BudgetCutProps> = ({ project, onBack }) => {
     (project.networks || []).find(n => n.networkCode === selectedNetworkCode), 
   [project, selectedNetworkCode]);
 
-  const totals = useMemo(() => {
-    const networks = project.networks || [];
-    const totalProjectFull = networks.reduce((acc, n) => 
-      acc + (n.labor_full || 0) + (n.supervise_full || 0) + (n.transport_full || 0) + (n.misc_full || 0), 0);
+  // คำนวณยอดรวมเบิกจ่ายของโครงข่ายที่เลือก
+  const networkTotals = useMemo(() => {
+    if (!selectedNetwork) return { full: 0, limit: 0, spent: 0, remainingLimit: 0 };
     
-    const globalLimit = totalProjectFull * (project.maxBudgetPercent / 100);
-    const totalSpent = records.reduce((acc, r) => 
+    const full = (selectedNetwork.labor_full || 0) + (selectedNetwork.supervise_full || 0) + (selectedNetwork.transport_full || 0) + (selectedNetwork.misc_full || 0);
+    const limit = full * (project.maxBudgetPercent / 100);
+    
+    // กรองประวัติเฉพาะโครงข่ายนี้
+    const networkRecords = records.filter(r => r.networkCode === selectedNetworkCode);
+    const spent = networkRecords.reduce((acc, r) => 
       acc + (r.labor_cut || 0) + (r.supervise_cut || 0) + (r.transport_cut || 0) + (r.misc_cut || 0), 0);
     
-    const remainingGlobalLimit = Math.max(0, globalLimit - totalSpent);
-    
-    return { totalProjectFull, globalLimit, totalSpent, remainingGlobalLimit };
-  }, [project, records]);
+    return { full, limit, spent, remainingLimit: Math.max(0, limit - spent) };
+  }, [selectedNetwork, records, selectedNetworkCode, project.maxBudgetPercent]);
 
-  // คำนวณยอดคงเหลือตามเพดานงบ (Remaining within Limit)
+  // คำนวณยอดคงเหลือตามเพดานงบของแต่ละหมวด (ฐาน 80%)
   const getCategoryRemainingLimit = (cat: BudgetCategory) => {
     if (!selectedNetwork) return 0;
     
-    // 1. หาเพดานงบของหมวดนี้ (Full * Percent)
+    // 1. หาเพดานงบของหมวดนี้ (เช่น 100 * 0.8 = 80)
     const fullVal = (selectedNetwork as any)[`${cat}_full`] || 0;
     const limitVal = fullVal * (project.maxBudgetPercent / 100);
     
     // 2. หายอดที่เบิกไปแล้วในหมวดนี้สำหรับโครงข่ายนี้
-    // สูตร: ยอดที่เบิกแล้ว = งบเต็ม 100% - ยอดคงเหลือ 100% (จากฐานข้อมูล)
-    const balance100 = (selectedNetwork as any)[`${cat}_balance`] || 0;
-    const spent = fullVal - balance100;
+    const networkRecords = records.filter(r => r.networkCode === selectedNetworkCode);
+    const spentInCategory = networkRecords.reduce((acc, r) => acc + ((r as any)[`${cat}_cut`] || 0), 0);
     
-    // 3. ยอดคงเหลือที่ตัดได้ = เพดาน - ยอดที่เบิกแล้ว
-    return Math.max(0, limitVal - spent);
+    // 3. ยอดคงเหลือที่ตัดได้ (ฐาน 80%) = เพดาน - ยอดที่เบิกแล้ว
+    // หากเบิกเกินเพดาน 80% ผลลัพธ์จะเป็นติดลบตามที่ต้องการ
+    return limitVal - spentInCategory;
   };
 
   const currentCategoryLimitDisplay = useMemo(() => {
     return getCategoryRemainingLimit(category);
-  }, [selectedNetwork, category, project.maxBudgetPercent]);
+  }, [selectedNetwork, category, project.maxBudgetPercent, records, selectedNetworkCode]);
 
   const handleAddOrUpdateCut = async () => {
     if (!detail.trim() || amount <= 0 || !selectedNetwork) {
@@ -94,17 +95,18 @@ const BudgetCut: React.FC<BudgetCutProps> = ({ project, onBack }) => {
       return;
     }
 
+    // ตรวจสอบวงเงินรายโครงข่าย (Network Limit)
     let checkAmount = amount;
     if (editingRecordId) {
       const oldRec = records.find(r => r.id === editingRecordId);
       const oldTotal = oldRec ? (oldRec.labor_cut + oldRec.supervise_cut + oldRec.transport_cut + oldRec.misc_cut) : 0;
-      if (checkAmount > (totals.remainingGlobalLimit + oldTotal + 0.1)) {
-        alert(`ยอดเบิกเกินวงเงินรวมคงเหลือของโครงการที่คุมไว้ ${project.maxBudgetPercent}%`);
+      if (checkAmount > (networkTotals.remainingLimit + oldTotal + 0.1)) {
+        alert(`ยอดเบิกเกินวงเงินรวมของโครงข่าย ${selectedNetworkCode} ที่คุมไว้ ${project.maxBudgetPercent}% (คงเหลือรายโครงข่าย: ${networkTotals.remainingLimit.toLocaleString()} ฿)`);
         return;
       }
     } else {
-      if (checkAmount > totals.remainingGlobalLimit + 0.1) {
-        alert(`ยอดเบิกเกินวงเงินรวมของโครงการที่คุมไว้ ${project.maxBudgetPercent}% (คงเหลือรวม: ${totals.remainingGlobalLimit.toLocaleString()} ฿)`);
+      if (checkAmount > networkTotals.remainingLimit + 0.1) {
+        alert(`ยอดเบิกเกินวงเงินรวมของโครงข่าย ${selectedNetworkCode} ที่คุมไว้ ${project.maxBudgetPercent}% (คงเหลือรายโครงข่าย: ${networkTotals.remainingLimit.toLocaleString()} ฿)`);
         return;
       }
     }
@@ -203,7 +205,7 @@ const BudgetCut: React.FC<BudgetCutProps> = ({ project, onBack }) => {
         <button onClick={onBack} className="p-3 bg-white rounded-2xl shadow-sm border border-slate-100"><ChevronLeft /></button>
         <div>
           <h2 className="text-xl font-black">{project.name} (WBS: {project.wbs})</h2>
-          <p className="text-xs font-bold text-slate-400">คุมงบโครงการ {project.maxBudgetPercent}%</p>
+          <p className="text-xs font-bold text-slate-400">คุมงบโครงการ {project.maxBudgetPercent}% รายโครงข่าย</p>
         </div>
       </div>
 
@@ -211,16 +213,16 @@ const BudgetCut: React.FC<BudgetCutProps> = ({ project, onBack }) => {
         <div className="lg:col-span-2 space-y-6">
           <div className="bg-white p-8 rounded-[32px] shadow-sm border border-slate-100 flex flex-col md:flex-row gap-6">
              <div className="flex-1">
-                <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Total Project Pool Usage ({project.maxBudgetPercent}%)</p>
-                <div className="text-3xl font-black text-slate-900">{totals.totalSpent.toLocaleString()} <span className="text-sm font-bold text-slate-400">/ {totals.globalLimit.toLocaleString()} ฿</span></div>
+                <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Network: {selectedNetworkCode} Usage ({project.maxBudgetPercent}%)</p>
+                <div className="text-3xl font-black text-slate-900">{networkTotals.spent.toLocaleString()} <span className="text-sm font-bold text-slate-400">/ {networkTotals.limit.toLocaleString()} ฿</span></div>
                 <div className="mt-4 w-full h-3 bg-slate-100 rounded-full overflow-hidden">
-                   <div className="bg-purple-600 h-full" style={{ width: `${(totals.totalSpent / (totals.globalLimit || 1)) * 100}%` }}></div>
+                   <div className={`${networkTotals.spent > networkTotals.limit ? 'bg-rose-500' : 'bg-purple-600'} h-full transition-all`} style={{ width: `${Math.min(100, (networkTotals.spent / (networkTotals.limit || 1)) * 100)}%` }}></div>
                 </div>
              </div>
-             <div className="md:w-1/3 purple-gradient rounded-2xl p-6 text-white text-center">
+             <div className={`md:w-1/3 ${networkTotals.spent > networkTotals.limit ? 'bg-rose-600' : 'purple-gradient'} rounded-2xl p-6 text-white text-center`}>
                 <Wallet className="w-6 h-6 mx-auto mb-2 text-yellow-400" />
-                <p className="text-[10px] font-bold opacity-60 uppercase">คงเหลือรวมเบิกได้</p>
-                <div className="text-xl font-black">{totals.remainingGlobalLimit.toLocaleString()}</div>
+                <p className="text-[10px] font-bold opacity-60 uppercase">คงเหลือโครงข่ายเบิกได้</p>
+                <div className="text-xl font-black">{networkTotals.remainingLimit.toLocaleString()}</div>
              </div>
           </div>
 
@@ -248,16 +250,16 @@ const BudgetCut: React.FC<BudgetCutProps> = ({ project, onBack }) => {
                    </select>
                 </div>
                 <div className="space-y-2">
-                   <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">หมวดค่าใช้จ่าย</label>
+                   <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">หมวดค่าใช้จ่าย (แสดงยอดคงเหลือฐาน {project.maxBudgetPercent}%)</label>
                    <select 
                      className="w-full px-5 py-3 bg-slate-50 border border-slate-100 rounded-xl font-bold outline-none focus:ring-2 focus:ring-purple-500"
                      value={category}
                      onChange={e => setCategory(e.target.value as BudgetCategory)}
                    >
-                     <option value="labor">ค่าแรง (คงเหลือตาม {project.maxBudgetPercent}%: {getCategoryRemainingLimit('labor').toLocaleString()})</option>
-                     <option value="supervise">ควบคุมงาน (คงเหลือตาม {project.maxBudgetPercent}%: {getCategoryRemainingLimit('supervise').toLocaleString()})</option>
-                     <option value="transport">ขนส่ง (คงเหลือตาม {project.maxBudgetPercent}%: {getCategoryRemainingLimit('transport').toLocaleString()})</option>
-                     <option value="misc">เบ็ดเตล็ด (คงเหลือตาม {project.maxBudgetPercent}%: {getCategoryRemainingLimit('misc').toLocaleString()})</option>
+                     <option value="labor">ค่าแรง (คงเหลือ: {getCategoryRemainingLimit('labor').toLocaleString()})</option>
+                     <option value="supervise">ควบคุมงาน (คงเหลือ: {getCategoryRemainingLimit('supervise').toLocaleString()})</option>
+                     <option value="transport">ขนส่ง (คงเหลือ: {getCategoryRemainingLimit('transport').toLocaleString()})</option>
+                     <option value="misc">เบ็ดเตล็ด (คงเหลือ: {getCategoryRemainingLimit('misc').toLocaleString()})</option>
                    </select>
                 </div>
                 <div className="space-y-2">
@@ -273,7 +275,9 @@ const BudgetCut: React.FC<BudgetCutProps> = ({ project, onBack }) => {
                 <div className="space-y-2">
                    <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest flex justify-between">
                      <span>จำนวนเงิน (฿)</span>
-                     <span className="text-purple-600">เพดาน {project.maxBudgetPercent}% ของหมวด: {currentCategoryLimitDisplay.toLocaleString()} ฿</span>
+                     <span className={`${currentCategoryLimitDisplay < 0 ? 'text-rose-600' : 'text-purple-600'} font-bold`}>
+                       คงเหลือฐาน {project.maxBudgetPercent}% หมวด: {currentCategoryLimitDisplay.toLocaleString()} ฿
+                     </span>
                    </label>
                    <input 
                      type="number" 
@@ -287,8 +291,8 @@ const BudgetCut: React.FC<BudgetCutProps> = ({ project, onBack }) => {
              <div className="p-4 bg-purple-50 border border-purple-100 rounded-2xl flex items-start gap-3">
                 <Info className="w-5 h-5 text-purple-600 shrink-0 mt-0.5" />
                 <div className="text-[10px] font-bold text-purple-800 leading-relaxed uppercase tracking-tight">
-                  ยอดเบิกที่ใส่จะต้องไม่ทำให้ยอดเบิกสะสมทั้งโครงการเกิน {project.maxBudgetPercent}% ({totals.globalLimit.toLocaleString()} ฿) 
-                  และต้องไม่เกินยอดคงเหลือในหมวดของโครงข่ายนั้นๆ
+                  ระบบคุมยอดตัดไม่ให้เกินเพดาน {project.maxBudgetPercent}% ของ "รายโครงข่าย" ({networkTotals.limit.toLocaleString()} ฿ สำหรับโครงข่าย {selectedNetworkCode}) 
+                  หากเบิกในหมวดเดียวจนเกิน {project.maxBudgetPercent}% ของหมวดนั้น ยอดจะแสดงผลเป็นติดลบ
                 </div>
              </div>
 
@@ -343,28 +347,33 @@ const BudgetCut: React.FC<BudgetCutProps> = ({ project, onBack }) => {
 
         <div className="space-y-6">
            <div className="bg-white p-8 rounded-[32px] shadow-sm border border-slate-100">
-              <h4 className="text-[10px] font-black uppercase tracking-widest text-slate-400 mb-4">สถานะรายโครงข่าย (Balance)</h4>
+              <h4 className="text-[10px] font-black uppercase tracking-widest text-slate-400 mb-4">สถานะรายโครงข่าย (Balance - Limit Target)</h4>
               <div className="space-y-6">
                  {(project.networks || []).map(n => {
                    const nFull = (n.labor_full || 0) + (n.supervise_full || 0) + (n.transport_full || 0) + (n.misc_full || 0);
-                   const nBal = (n.labor_balance || 0) + (n.supervise_balance || 0) + (n.transport_balance || 0) + (n.misc_balance || 0);
-                   const spent = nFull - nBal;
                    const nLimit = nFull * (project.maxBudgetPercent / 100);
-                   const nRemainingLimit = Math.max(0, nLimit - spent);
                    
+                   // กรองยอดที่เบิกเฉพาะโครงข่ายนี้
+                   const netSpent = records.filter(r => r.networkCode === n.networkCode).reduce((acc, r) => 
+                     acc + (r.labor_cut + r.supervise_cut + r.transport_cut + r.misc_cut), 0);
+                   
+                   const nRemainingLimit = nLimit - netSpent;
                    const perc = nLimit > 0 ? (nRemainingLimit / nLimit) * 100 : 0;
+                   
                    return (
                      <div key={n.networkCode} className="space-y-2">
                         <div className="flex justify-between text-[10px] font-black uppercase">
-                           <span>{n.networkCode}</span>
-                           <span className={perc < 20 ? 'text-rose-500' : 'text-slate-400'}>{perc.toFixed(0)}% Limit Left</span>
+                           <span className="text-purple-700">{n.networkCode}</span>
+                           <span className={perc < 10 ? 'text-rose-500 font-black' : 'text-slate-400'}>
+                             {nRemainingLimit < 0 ? 'OVER LIMIT' : `${perc.toFixed(0)}% Left`}
+                           </span>
                         </div>
                         <div className="w-full h-2 bg-slate-50 rounded-full overflow-hidden border border-slate-100">
-                           <div className={`h-full ${perc < 20 ? 'bg-rose-500' : 'bg-emerald-500'}`} style={{ width: `${perc}%` }}></div>
+                           <div className={`h-full ${nRemainingLimit < 0 ? 'bg-rose-600' : perc < 20 ? 'bg-amber-500' : 'bg-emerald-500'} transition-all`} style={{ width: `${Math.max(0, Math.min(100, perc))}%` }}></div>
                         </div>
                         <div className="text-[9px] font-bold text-slate-400 flex justify-between">
-                           <span>Remaining Limit:</span>
-                           <span>{nRemainingLimit.toLocaleString()} ฿</span>
+                           <span>Limit Remaining:</span>
+                           <span className={nRemainingLimit < 0 ? 'text-rose-600' : 'text-emerald-600'}>{nRemainingLimit.toLocaleString()} ฿</span>
                         </div>
                      </div>
                    );

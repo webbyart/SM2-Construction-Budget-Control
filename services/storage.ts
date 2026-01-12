@@ -6,7 +6,7 @@ import { Project, CutRecord, User, Worker, Network, NetworkDefinition } from '..
  * ต้องกด Deploy > New Deployment ใน Google Apps Script 
  * แล้วนำ URL ใหม่มาวางที่นี่ทุกครั้ง
  */
-const WEB_APP_URL = 'https://script.google.com/macros/s/AKfycbx9Wdr-c7asUs9WB4tIxnjBVu8KvUe9wBNh1PegrHTOLSzHyZKj9hesC71d29ZU9Rk8/exec';
+const WEB_APP_URL = 'https://script.google.com/macros/s/AKfycbwixDmTZV01D6OT7PSSEr820ZguOlwPLleQ2Fwwra9dIQ_pJ5peY4qiKAknU4buogJn/exec';
 
 const gas = (window as any).google?.script?.run;
 
